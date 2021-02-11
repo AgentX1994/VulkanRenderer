@@ -1,0 +1,6 @@
+{
+    "files.associations": {
+        "iostream": "cpp"
+    },
+    "glsllint.glslangValidatorArgs": "--target-env vulkan1.2"
+}
