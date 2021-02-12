@@ -43,13 +43,26 @@ void Application::Run()
     Cleanup();
 }
 
+void Application::SetFramebufferResized()
+{
+    framebuffer_resized_ = true;
+}
+
+static void FramebufferResizeCallback(GLFWwindow* window, int width, int height)
+{
+    auto app = reinterpret_cast<Application*>(glfwGetWindowUserPointer(window));
+    app->SetFramebufferResized();
+}
+
 void Application::InitWindow()
 {
     glfwInit();
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+
     window_ = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan window", nullptr, nullptr);
+    glfwSetWindowUserPointer(window_, this);
+    glfwSetFramebufferSizeCallback(window_, FramebufferResizeCallback);
 }
 
 void Application::InitVulkan()
@@ -81,22 +94,14 @@ void Application::MainLoop()
 
 void Application::Cleanup()
 {
+    CleanupSwapChain();
+
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
         logical_device_.destroySemaphore(render_finished_semaphore_[i]);
         logical_device_.destroySemaphore(image_available_semaphore_[i]);
         logical_device_.destroyFence(in_flight_fences_[i]);
     }
     logical_device_.destroyCommandPool(command_pool_);
-    for (auto framebuffer : swap_chain_frame_buffers_) {
-        logical_device_.destroyFramebuffer(framebuffer);
-    }
-    logical_device_.destroyPipeline(graphics_pipeline_);
-    logical_device_.destroyPipelineLayout(pipeline_layout_);
-    logical_device_.destroyRenderPass(render_pass_);
-    for (auto image_view : swap_chain_image_views_) {
-        logical_device_.destroyImageView(image_view);
-    }
-    logical_device_.destroySwapchainKHR(swapchain_);
     instance_.destroySurfaceKHR(surface_);
     logical_device_.destroy();
     if constexpr (ENABLE_VALIDATION_LAYERS) {
@@ -741,17 +746,30 @@ void Application::CreateSyncObjects()
 void Application::DrawFrame()
 {
     // Wait until this fence has been finished
-    logical_device_.waitForFences(in_flight_fences_[current_frame_], VK_TRUE, std::numeric_limits<uint64_t>::max());
+    auto wait_for_fence_result = logical_device_.waitForFences(in_flight_fences_[current_frame_], VK_TRUE, std::numeric_limits<uint64_t>::max());
+    if (wait_for_fence_result != vk::Result::eSuccess) {
+        throw std::runtime_error("Could not wait for fence!");
+    }
 
     // Get next image
-    auto result = logical_device_.acquireNextImageKHR(swapchain_, std::numeric_limits<uint64_t>::max(), image_available_semaphore_[current_frame_], {});
+    vk::ResultValue<uint32_t> result(vk::Result::eSuccess, 0);
+    try {
+        result = logical_device_.acquireNextImageKHR(swapchain_, std::numeric_limits<uint64_t>::max(), image_available_semaphore_[current_frame_], {});
+    } catch (vk::SystemError& e) {
+        if (e.code() == vk::Result::eErrorOutOfDateKHR) {
+            RecreateSwapChain();
+            return;
+        } else {
+            throw;
+        }
+    }
     uint32_t image_index;
     switch (result.result) {
     case vk::Result::eSuccess:
-        image_index = result.value;
-        break;
     case vk::Result::eSuboptimalKHR:
     case vk::Result::eNotReady:
+        image_index = result.value;
+        break;
     case vk::Result::eTimeout:
         throw std::runtime_error("Could not acquire next image!");
     }
@@ -759,7 +777,11 @@ void Application::DrawFrame()
     // Check if a previous frame is using this image
     // operator bool() is true if not VK_NULL_HANDLE
     if (images_in_flight_[image_index]) {
-        logical_device_.waitForFences(images_in_flight_[image_index], VK_TRUE, std::numeric_limits<uint64_t>::max());
+        auto wait_for_image_fence = logical_device_.waitForFences(images_in_flight_[image_index], VK_TRUE, std::numeric_limits<uint64_t>::max());
+
+        if (wait_for_image_fence != vk::Result::eSuccess) {
+            throw std::runtime_error("Could not wait for image fence!");
+        }
     }
 
     images_in_flight_[image_index] = in_flight_fences_[current_frame_];
@@ -771,7 +793,6 @@ void Application::DrawFrame()
         command_buffers_[image_index],
         render_finished_semaphore_[current_frame_]);
 
-
     logical_device_.resetFences(in_flight_fences_[current_frame_]);
 
     graphics_queue_.submit(submit_info, in_flight_fences_[current_frame_]);
@@ -782,9 +803,64 @@ void Application::DrawFrame()
         image_index,
         {});
 
-    auto present_result = present_queue_.presentKHR(present_info);
+    vk::Result present_result = vk::Result::eSuccess;
+    try {
+        present_result = present_queue_.presentKHR(present_info);
+    } catch (vk::SystemError& e) {
+        if (e.code() == vk::Result::eErrorOutOfDateKHR) {
+            // this will recreate the swapchain below
+            present_result = vk::Result::eErrorOutOfDateKHR;
+        } else {
+            throw;
+        }
+    }
+
+    if (present_result == vk::Result::eSuboptimalKHR || present_result == vk::Result::eErrorOutOfDateKHR || framebuffer_resized_) {
+        framebuffer_resized_ = false;
+        RecreateSwapChain();
+    } else if (present_result != vk::Result::eSuccess) {
+        throw std::runtime_error("failed to present swap chain image!");
+    }
 
     current_frame_ = (current_frame_ + 1) % MAX_FRAMES_IN_FLIGHT;
+}
+
+void Application::CleanupSwapChain()
+{
+    for (auto framebuffer : swap_chain_frame_buffers_) {
+        logical_device_.destroyFramebuffer(framebuffer);
+    }
+    logical_device_.freeCommandBuffers(command_pool_, command_buffers_);
+
+    logical_device_.destroyPipeline(graphics_pipeline_);
+    logical_device_.destroyPipelineLayout(pipeline_layout_);
+    logical_device_.destroyRenderPass(render_pass_);
+    for (auto image_view : swap_chain_image_views_) {
+        logical_device_.destroyImageView(image_view);
+    }
+    logical_device_.destroySwapchainKHR(swapchain_);
+}
+
+void Application::RecreateSwapChain()
+{
+    // handle minimization
+    int width = 0, height = 0;
+    glfwGetFramebufferSize(window_, &width, &height);
+    while (width == 0 || height == 0) {
+        glfwGetFramebufferSize(window_, &width, &height);
+        glfwWaitEvents();
+    }
+
+    logical_device_.waitIdle();
+
+    CleanupSwapChain();
+
+    CreateSwapChain();
+    CreateImageViews();
+    CreateRenderPass();
+    CreateGraphicsPipeline();
+    CreateFramebuffers();
+    CreateCommandBuffers();
 }
 
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE

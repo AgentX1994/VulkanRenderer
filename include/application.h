@@ -34,6 +34,8 @@ class Application {
 public:
     void Run();
 
+    void SetFramebufferResized();
+
 private:
     void InitWindow();
     void InitVulkan();
@@ -63,6 +65,8 @@ private:
     void CreateCommandPool();
     void CreateSyncObjects();
     void CreateCommandBuffers();
+    void CleanupSwapChain();
+    void RecreateSwapChain();
 
     void DrawFrame();
 
@@ -89,5 +93,6 @@ private:
     std::array<vk::Fence, MAX_FRAMES_IN_FLIGHT> in_flight_fences_;
     std::vector<vk::Fence> images_in_flight_;
     size_t current_frame_ = 0;
+    bool framebuffer_resized_ = false;
     vk::DebugUtilsMessengerEXT debug_messenger_;
 };

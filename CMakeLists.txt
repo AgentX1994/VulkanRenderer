@@ -24,4 +24,14 @@ target_link_libraries(VulkanTest
 PUBLIC
     Vulkan::Vulkan
     glfw
-    PkgConfig::Shaderc)
+    PkgConfig::Shaderc
+    ${CMAKE_DL_LIBS})
+
+add_custom_target(
+  copy_shader_files
+  COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${CMAKE_SOURCE_DIR}/shaders ${CMAKE_CURRENT_BINARY_DIR}/shaders
+  COMMENT "Copying shaders" VERBATIM
+)
+
+add_dependencies(VulkanTest copy_shader_files)
