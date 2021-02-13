@@ -57,7 +57,7 @@ private:
     vk::PresentModeKHR ChooseSwapPresentMode(const std::vector<vk::PresentModeKHR>& available_present_modes);
     vk::Extent2D ChooseSwapExtent(const vk::SurfaceCapabilitiesKHR& capabilities);
     void CreateSwapChain();
-    vk::ImageView CreateImageView(vk::Image image, vk::Format format);
+    vk::ImageView CreateImageView(vk::Image image, vk::Format format, vk::ImageAspectFlags aspect_flags);
     void CreateImageViews();
     void CreateRenderPass();
     void CreateGraphicsPipeline();
@@ -104,6 +104,13 @@ private:
         uint32_t height);
     void CreateTextureImageView();
     void CreateTextureSampler();
+    vk::Format FindSupportedFormat(
+        const std::vector<vk::Format>& candidates,
+        vk::ImageTiling tiling,
+        vk::FormatFeatureFlags features);
+    vk::Format FindDepthFormat();
+    bool HasStencilComponent(vk::Format format);
+    void CreateDepthResources();
 
     GLFWwindow* window_;
     vk::Instance instance_;
@@ -137,6 +144,10 @@ private:
     vk::DeviceMemory texture_image_memory_;
     vk::ImageView texture_image_view_;
     vk::Sampler texture_sampler_;
+
+    vk::Image depth_image_;
+    vk::DeviceMemory depth_image_memory_;
+    vk::ImageView depth_image_view_;
 
     std::vector<vk::CommandBuffer> command_buffers_;
     std::array<vk::Semaphore, MAX_FRAMES_IN_FLIGHT> image_available_semaphore_;
