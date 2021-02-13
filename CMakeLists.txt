@@ -15,7 +15,8 @@ add_executable(VulkanTest
     src/main.cpp
     src/application.cpp
     src/utils.cpp
-    src/stb_image.cpp)
+    src/stb_image.cpp
+    src/tiny_obj_loader.cpp)
 target_include_directories(VulkanTest
 PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -44,5 +45,13 @@ add_custom_target(
   COMMENT "Copying textures" VERBATIM
 )
 
+add_custom_target(
+  copy_model_files
+  COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${CMAKE_SOURCE_DIR}/models ${CMAKE_CURRENT_BINARY_DIR}/models
+  COMMENT "Copying models" VERBATIM
+)
+
 add_dependencies(VulkanTest copy_shader_files)
 add_dependencies(VulkanTest copy_texture_files)
+add_dependencies(VulkanTest copy_model_files)

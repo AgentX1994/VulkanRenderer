@@ -1,4 +1,7 @@
 #pragma once
+
+#include <array>
+
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
@@ -29,6 +32,19 @@ struct SwapChainSupportDetails {
 };
 
 constexpr size_t MAX_FRAMES_IN_FLIGHT = 2;
+
+// Forward declare Vertex struct
+
+
+struct Vertex {
+    glm::vec3 pos;
+    glm::vec3 color;
+    glm::vec2 tex_coord;
+
+    static vk::VertexInputBindingDescription GetBindingDescription();
+    static std::array<vk::VertexInputAttributeDescription, 3> GetAttributeDescriptions();
+    bool operator==(const Vertex& other) const;
+};
 
 class Application {
 public:
@@ -111,6 +127,7 @@ private:
     vk::Format FindDepthFormat();
     bool HasStencilComponent(vk::Format format);
     void CreateDepthResources();
+    void LoadModel();
 
     GLFWwindow* window_;
     vk::Instance instance_;
@@ -133,10 +150,16 @@ private:
     vk::DescriptorPool descriptor_pool_;
     std::vector<vk::DescriptorSet> descriptor_sets_;
 
+
+    std::vector<Vertex> vertices;
+    std::vector<uint32_t> indices;
+
     vk::Buffer vertex_buffer_;
     vk::DeviceMemory vertex_buffer_memory_;
+
     vk::Buffer index_buffer_;
     vk::DeviceMemory index_buffer_memory_;
+
     std::vector<vk::Buffer> uniform_buffers_;
     std::vector<vk::DeviceMemory> uniform_buffers_memory_;
 
@@ -149,11 +172,14 @@ private:
     vk::DeviceMemory depth_image_memory_;
     vk::ImageView depth_image_view_;
 
+
     std::vector<vk::CommandBuffer> command_buffers_;
+
     std::array<vk::Semaphore, MAX_FRAMES_IN_FLIGHT> image_available_semaphore_;
     std::array<vk::Semaphore, MAX_FRAMES_IN_FLIGHT> render_finished_semaphore_;
     std::array<vk::Fence, MAX_FRAMES_IN_FLIGHT> in_flight_fences_;
     std::vector<vk::Fence> images_in_flight_;
+
     size_t current_frame_ = 0;
     bool framebuffer_resized_ = false;
     vk::DebugUtilsMessengerEXT debug_messenger_;

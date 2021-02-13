@@ -5,52 +5,66 @@
 #include <chrono>
 #include <iostream>
 #include <limits>
+#include <unordered_map>
 
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtx/hash.hpp>
 
 #include "stb_image.h"
+#include "tiny_obj_loader.h"
 #include "utils.h"
 
 constexpr uint32_t WIDTH = 800;
 constexpr uint32_t HEIGHT = 600;
 
-struct Vertex {
-    glm::vec3 pos;
-    glm::vec3 color;
-    glm::vec2 tex_coord;
+const std::string MODEL_PATH = "models/viking_room.obj";
+const std::string TEXTURE_PATH = "textures/viking_room.png";
 
-    static vk::VertexInputBindingDescription GetBindingDescription()
-    {
-        return vk::VertexInputBindingDescription(
+vk::VertexInputBindingDescription Vertex::GetBindingDescription()
+{
+    return vk::VertexInputBindingDescription(
+        0,
+        sizeof(Vertex),
+        vk::VertexInputRate::eVertex);
+}
+
+std::array<vk::VertexInputAttributeDescription, 3> Vertex::GetAttributeDescriptions()
+{
+    return {
+        vk::VertexInputAttributeDescription(
             0,
-            sizeof(Vertex),
-            vk::VertexInputRate::eVertex);
-    }
+            0,
+            vk::Format::eR32G32B32Sfloat,
+            offsetof(Vertex, pos)),
+        vk::VertexInputAttributeDescription(
+            1,
+            0,
+            vk::Format::eR32G32B32Sfloat,
+            offsetof(Vertex, color)),
+        vk::VertexInputAttributeDescription(
+            2,
+            0,
+            vk::Format::eR32G32Sfloat,
+            offsetof(Vertex, tex_coord))
+    };
+}
 
-    static std::array<vk::VertexInputAttributeDescription, 3> GetAttributeDescriptions()
-    {
-        return {
-            vk::VertexInputAttributeDescription(
-                0,
-                0,
-                vk::Format::eR32G32B32Sfloat,
-                offsetof(Vertex, pos)),
-            vk::VertexInputAttributeDescription(
-                1,
-                0,
-                vk::Format::eR32G32B32Sfloat,
-                offsetof(Vertex, color)),
-            vk::VertexInputAttributeDescription(
-                2,
-                0,
-                vk::Format::eR32G32Sfloat,
-                offsetof(Vertex, tex_coord))
-        };
-    }
-};
+bool Vertex::operator==(const Vertex& other) const {
+    return pos == other.pos && color == other.color && tex_coord == other.tex_coord;
+}
+
+namespace std {
+    template<> struct hash<Vertex> {
+        size_t operator()(const Vertex& vertex) const {
+            return ((hash<glm::vec3>()(vertex.pos) ^
+                   (hash<glm::vec3>()(vertex.color) << 1)) >> 1) ^
+                   (hash<glm::vec2>()(vertex.tex_coord) << 1);
+        }
+    };
+}
 
 struct UniformBufferObject {
     alignas(4 * sizeof(float)) glm::mat4 model;
@@ -83,22 +97,22 @@ const std::vector<const char*> VALIDATION_LAYERS = {
 //     0, 1, 2, 2, 3, 0
 // };
 
-const std::vector<Vertex> TWO_SQUARES_VERTICES = {
-    { { -0.5f, -0.5f, 0.0f }, { 1.0f, 0.0f, 0.0f }, { 1.0f, 0.0f } },
-    { { 0.5f, -0.5f, 0.0f }, { 0.0f, 1.0f, 0.0f }, { 0.0f, 0.0f } },
-    { { 0.5f, 0.5f, 0.0f }, { 0.0f, 0.0f, 1.0f }, { 0.0f, 1.0f } },
-    { { -0.5f, 0.5f, 0.0f }, { 1.0f, 1.0f, 1.0f }, { 1.0f, 1.0f } },
+// const std::vector<Vertex> TWO_SQUARES_VERTICES = {
+//     { { -0.5f, -0.5f, 0.0f }, { 1.0f, 0.0f, 0.0f }, { 1.0f, 0.0f } },
+//     { { 0.5f, -0.5f, 0.0f }, { 0.0f, 1.0f, 0.0f }, { 0.0f, 0.0f } },
+//     { { 0.5f, 0.5f, 0.0f }, { 0.0f, 0.0f, 1.0f }, { 0.0f, 1.0f } },
+//     { { -0.5f, 0.5f, 0.0f }, { 1.0f, 1.0f, 1.0f }, { 1.0f, 1.0f } },
 
-    { { -0.5f, -0.5f, -0.5f }, { 1.0f, 0.0f, 0.0f }, { 1.0f, 0.0f } },
-    { { 0.5f, -0.5f, -0.5f }, { 0.0f, 1.0f, 0.0f }, { 0.0f, 0.0f } },
-    { { 0.5f, 0.5f, -0.5f }, { 0.0f, 0.0f, 1.0f }, { 0.0f, 1.0f } },
-    { { -0.5f, 0.5f, -0.5f }, { 1.0f, 1.0f, 1.0f }, { 1.0f, 1.0f } }
-};
+//     { { -0.5f, -0.5f, -0.5f }, { 1.0f, 0.0f, 0.0f }, { 1.0f, 0.0f } },
+//     { { 0.5f, -0.5f, -0.5f }, { 0.0f, 1.0f, 0.0f }, { 0.0f, 0.0f } },
+//     { { 0.5f, 0.5f, -0.5f }, { 0.0f, 0.0f, 1.0f }, { 0.0f, 1.0f } },
+//     { { -0.5f, 0.5f, -0.5f }, { 1.0f, 1.0f, 1.0f }, { 1.0f, 1.0f } }
+// };
 
-const std::vector<uint16_t> TWO_SQUARES_INDICES = {
-    0, 1, 2, 2, 3, 0,
-    4, 5, 6, 6, 7, 4
-};
+// const std::vector<uint16_t> TWO_SQUARES_INDICES = {
+//     0, 1, 2, 2, 3, 0,
+//     4, 5, 6, 6, 7, 4
+// };
 
 #ifndef NDEBUG
 constexpr bool ENABLE_VALIDATION_LAYERS = true;
@@ -166,6 +180,7 @@ void Application::InitVulkan()
     CreateTextureImage();
     CreateTextureImageView();
     CreateTextureSampler();
+    LoadModel();
     CreateVertexBuffer();
     CreateIndexBuffer();
     CreateUniformBuffers();
@@ -587,8 +602,7 @@ void Application::CreateRenderPass()
         vk::AttachmentLoadOp::eDontCare,
         vk::AttachmentStoreOp::eDontCare,
         vk::ImageLayout::eUndefined,
-        vk::ImageLayout::eDepthStencilAttachmentOptimal
-    );
+        vk::ImageLayout::eDepthStencilAttachmentOptimal);
 
     vk::AttachmentReference color_attachment_ref(
         0,
@@ -615,7 +629,7 @@ void Application::CreateRenderPass()
         vk::AccessFlagBits { 0 },
         vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite);
 
-    std::array<vk::AttachmentDescription, 2> attachments = {{color_attachment, depth_attachment}};
+    std::array<vk::AttachmentDescription, 2> attachments = { { color_attachment, depth_attachment } };
 
     vk::RenderPassCreateInfo render_pass_info(
         vk::RenderPassCreateFlags(),
@@ -765,8 +779,7 @@ void Application::CreateGraphicsPipeline()
         VK_FALSE,
         VK_FALSE,
         {},
-        {}
-    );
+        {});
 
     vk::GraphicsPipelineCreateInfo pipeline_info(
         vk::PipelineCreateFlags(),
@@ -868,7 +881,7 @@ std::pair<vk::Buffer, vk::DeviceMemory> Application::CreateBuffer(
 
 void Application::CreateVertexBuffer()
 {
-    vk::DeviceSize buffer_size = sizeof(TWO_SQUARES_VERTICES[0]) * TWO_SQUARES_VERTICES.size();
+    vk::DeviceSize buffer_size = sizeof(vertices[0]) * vertices.size();
 
     auto [staging_buffer, staging_buffer_memory] = CreateBuffer(
         buffer_size,
@@ -876,7 +889,7 @@ void Application::CreateVertexBuffer()
         vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
     void* data = logical_device_.mapMemory(staging_buffer_memory, 0, buffer_size);
-    memcpy(data, TWO_SQUARES_VERTICES.data(), (size_t)buffer_size);
+    memcpy(data, vertices.data(), (size_t)buffer_size);
     logical_device_.unmapMemory(staging_buffer_memory);
 
     std::tie(vertex_buffer_, vertex_buffer_memory_) = CreateBuffer(
@@ -892,7 +905,7 @@ void Application::CreateVertexBuffer()
 
 void Application::CreateIndexBuffer()
 {
-    vk::DeviceSize buffer_size = sizeof(TWO_SQUARES_INDICES[0]) * TWO_SQUARES_INDICES.size();
+    vk::DeviceSize buffer_size = sizeof(indices[0]) * indices.size();
 
     auto [staging_buffer, staging_buffer_memory] = CreateBuffer(
         buffer_size,
@@ -900,7 +913,7 @@ void Application::CreateIndexBuffer()
         vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
     void* data = logical_device_.mapMemory(staging_buffer_memory, 0, buffer_size);
-    memcpy(data, TWO_SQUARES_INDICES.data(), (size_t)buffer_size);
+    memcpy(data, indices.data(), (size_t)buffer_size);
     logical_device_.unmapMemory(staging_buffer_memory);
 
     std::tie(index_buffer_, index_buffer_memory_) = CreateBuffer(
@@ -931,7 +944,7 @@ void Application::CreateCommandBuffers()
         command_buffers_[i].begin(begin_info);
 
         std::array<vk::ClearValue, 2> clear_values;
-        clear_values[0].color.setFloat32({{0.0f, 0.0f, 0.0f, 0.0f}});
+        clear_values[0].color.setFloat32({ { 0.0f, 0.0f, 0.0f, 0.0f } });
         clear_values[1].depthStencil.setDepth(1.0f);
         clear_values[1].depthStencil.setStencil(0);
 
@@ -946,10 +959,10 @@ void Application::CreateCommandBuffers()
         command_buffers_[i].bindPipeline(vk::PipelineBindPoint::eGraphics, graphics_pipeline_);
 
         command_buffers_[i].bindVertexBuffers(0, vertex_buffer_, { 0 });
-        command_buffers_[i].bindIndexBuffer(index_buffer_, 0, vk::IndexType::eUint16);
+        command_buffers_[i].bindIndexBuffer(index_buffer_, 0, vk::IndexType::eUint32);
         command_buffers_[i].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipeline_layout_, 0, descriptor_sets_[i], {});
         command_buffers_[i].drawIndexed(
-            static_cast<uint32_t>(TWO_SQUARES_INDICES.size()),
+            static_cast<uint32_t>(indices.size()),
             1,
             0,
             0,
@@ -1289,7 +1302,7 @@ std::pair<vk::Image, vk::DeviceMemory> Application::CreateImage(
 void Application::CreateTextureImage()
 {
     int texture_width, texture_height, texture_channels;
-    stbi_uc* pixels = stbi_load("textures/texture.jpg", &texture_width, &texture_height, &texture_channels, STBI_rgb_alpha);
+    stbi_uc* pixels = stbi_load(TEXTURE_PATH.c_str(), &texture_width, &texture_height, &texture_channels, STBI_rgb_alpha);
     vk::DeviceSize image_size = texture_width * texture_height * 4;
 
     if (!pixels) {
@@ -1552,6 +1565,50 @@ void Application::CreateDepthResources()
         depth_format,
         vk::ImageLayout::eUndefined,
         vk::ImageLayout::eDepthStencilAttachmentOptimal);
+}
+
+void Application::LoadModel()
+{
+    tinyobj::attrib_t attrib;
+    std::vector<tinyobj::shape_t> shapes;
+    std::vector<tinyobj::material_t> materials;
+    std::string warn, err;
+
+    if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, MODEL_PATH.c_str())) {
+        throw std::runtime_error(warn + err);
+    }
+
+    std::unordered_map<Vertex, uint32_t> unique_vertices;
+
+    for (const auto& shape : shapes) {
+        for (const auto& index : shape.mesh.indices) {
+            // Currently assuming that every vertex is unique
+            // TODO: Fix this
+            Vertex vertex{};
+
+            vertex.pos = {
+                attrib.vertices[3 * index.vertex_index + 0],
+                attrib.vertices[3 * index.vertex_index + 1],
+                attrib.vertices[3 * index.vertex_index + 2]
+            };
+            
+            vertex.tex_coord = {
+                attrib.texcoords[2 * index.texcoord_index + 0],
+                // the loader loads top to bottom, but Vulkan is bottom to top
+                1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
+            };
+
+            vertex.color = {1.0f, 1.0f, 1.0f};
+
+            if (unique_vertices.count(vertex) == 0)
+            {
+                unique_vertices[vertex] = static_cast<uint32_t>(vertices.size());
+                vertices.push_back(vertex);
+            }
+
+            indices.push_back(unique_vertices[vertex]);
+        }
+    }
 }
 
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
