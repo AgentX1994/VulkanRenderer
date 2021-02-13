@@ -1,14 +1,14 @@
 #include <iostream>
 #include <vector>
 
-#include "utils.h"
 #include "application.h"
+#include "utils.h"
 
 int main()
 {
-    Application app;
+  Application app;
 
-    app.Run();
+  app.Run();
 
-    return 0;
+  return 0;
 }
