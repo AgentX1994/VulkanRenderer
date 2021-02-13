@@ -1,13 +1,53 @@
 #include "application.h"
 
 #include <algorithm>
+#include <chrono>
 #include <iostream>
 #include <limits>
+
+#define GLM_FORCE_RADIANS
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 #include "utils.h"
 
 constexpr uint32_t WIDTH = 800;
 constexpr uint32_t HEIGHT = 600;
+
+struct Vertex {
+    glm::vec2 pos;
+    glm::vec3 color;
+
+    static vk::VertexInputBindingDescription GetBindingDescription()
+    {
+        return vk::VertexInputBindingDescription(
+            0,
+            sizeof(Vertex),
+            vk::VertexInputRate::eVertex);
+    }
+
+    static std::array<vk::VertexInputAttributeDescription, 2> GetAttributeDescriptions()
+    {
+        return {
+            vk::VertexInputAttributeDescription(
+                0,
+                0,
+                vk::Format::eR32G32Sfloat,
+                offsetof(Vertex, pos)),
+            vk::VertexInputAttributeDescription(
+                1,
+                0,
+                vk::Format::eR32G32B32Sfloat,
+                offsetof(Vertex, color))
+        };
+    }
+};
+
+struct UniformBufferObject {
+    alignas(4*sizeof(float)) glm::mat4 model;
+    alignas(4*sizeof(float)) glm::mat4 view;
+    alignas(4*sizeof(float)) glm::mat4 proj;
+};
 
 const std::vector<const char*> DEVICE_EXTENSIONS = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME
@@ -15,6 +55,23 @@ const std::vector<const char*> DEVICE_EXTENSIONS = {
 
 const std::vector<const char*> VALIDATION_LAYERS = {
     "VK_LAYER_KHRONOS_validation"
+};
+
+const std::vector<Vertex> TRIANGLE = {
+    { { 0.0f, -0.5f }, { 1.0f, 1.0f, 1.0f } },
+    { { 0.5f, 0.5f }, { 0.0f, 1.0f, 0.0f } },
+    { { -0.5f, 0.5f }, { 0.0f, 0.0f, 1.0f } }
+};
+
+const std::vector<Vertex> SQUARE_VERTICES = {
+    { { -0.5f, -0.5f }, { 1.0f, 0.0f, 0.0f } },
+    { { 0.5f, -0.5f }, { 0.0f, 1.0f, 0.0f } },
+    { { 0.5f, 0.5f }, { 0.0f, 0.0f, 1.0f } },
+    { { -0.5f, 0.5f }, { 1.0f, 1.0f, 1.0f } }
+};
+
+const std::vector<uint16_t> SQUARE_INDICES = {
+    0, 1, 2, 2, 3, 0
 };
 
 #ifndef NDEBUG
@@ -75,9 +132,15 @@ void Application::InitVulkan()
     CreateSwapChain();
     CreateImageViews();
     CreateRenderPass();
+    CreateDescriptorSetLayout();
     CreateGraphicsPipeline();
     CreateFramebuffers();
     CreateCommandPool();
+    CreateVertexBuffer();
+    CreateIndexBuffer();
+    CreateUniformBuffers();
+    CreateDescriptorPool();
+    CreateDescriptorSets();
     CreateCommandBuffers();
     CreateSyncObjects();
 }
@@ -96,6 +159,14 @@ void Application::Cleanup()
 {
     CleanupSwapChain();
 
+    logical_device_.destroyDescriptorSetLayout(descriptor_set_layout_);
+
+    logical_device_.destroyBuffer(index_buffer_);
+    logical_device_.freeMemory(index_buffer_memory_);
+
+    logical_device_.destroyBuffer(vertex_buffer_);
+    logical_device_.freeMemory(vertex_buffer_memory_);
+
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
         logical_device_.destroySemaphore(render_finished_semaphore_[i]);
         logical_device_.destroySemaphore(image_available_semaphore_[i]);
@@ -105,7 +176,7 @@ void Application::Cleanup()
     instance_.destroySurfaceKHR(surface_);
     logical_device_.destroy();
     if constexpr (ENABLE_VALIDATION_LAYERS) {
-        instance_.destroyDebugUtilsMessengerEXT(debug_messenger_);
+        //instance_.destroyDebugUtilsMessengerEXT(debug_messenger_);
     }
     instance_.destroy();
 
@@ -543,10 +614,12 @@ void Application::CreateGraphicsPipeline()
 
     std::vector<vk::PipelineShaderStageCreateInfo> shader_stages = { vert_shader_stage_info, frag_shader_stage_info };
 
+    auto bindingDescription = Vertex::GetBindingDescription();
+    auto attributeDescriptions = Vertex::GetAttributeDescriptions();
     vk::PipelineVertexInputStateCreateInfo vertex_input_info(
         vk::PipelineVertexInputStateCreateFlags(),
-        {}, // Vertex Binding Descriptions
-        {} // Vertex attribute descriptions
+        bindingDescription, // Vertex Binding Descriptions
+        attributeDescriptions // Vertex attribute descriptions
     );
 
     vk::PipelineInputAssemblyStateCreateInfo input_assembly(
@@ -574,7 +647,7 @@ void Application::CreateGraphicsPipeline()
         VK_FALSE,
         vk::PolygonMode::eFill,
         vk::CullModeFlagBits::eBack,
-        vk::FrontFace::eClockwise,
+        vk::FrontFace::eCounterClockwise,
         VK_FALSE,
         0.0f,
         0.0f,
@@ -618,7 +691,7 @@ void Application::CreateGraphicsPipeline()
 
     vk::PipelineLayoutCreateInfo pipeline_layout_info(
         vk::PipelineLayoutCreateFlags(),
-        {}, // Set layouts
+        descriptor_set_layout_, // Set layouts
         {} // Push constant ranges
     );
 
@@ -692,6 +765,79 @@ void Application::CreateCommandPool()
     command_pool_ = logical_device_.createCommandPool(pool_info);
 }
 
+std::pair<vk::Buffer, vk::DeviceMemory> Application::CreateBuffer(
+    vk::DeviceSize size,
+    vk::BufferUsageFlags usage,
+    vk::MemoryPropertyFlags properties)
+{
+    vk::BufferCreateInfo buffer_info(
+        vk::BufferCreateFlags(),
+        size,
+        usage,
+        vk::SharingMode::eExclusive);
+
+    auto buffer = logical_device_.createBuffer(buffer_info);
+
+    auto mem_reqs = logical_device_.getBufferMemoryRequirements(buffer);
+
+    vk::MemoryAllocateInfo alloc_info(
+        mem_reqs.size,
+        FindMemoryType(mem_reqs.memoryTypeBits, properties));
+
+    auto memory = logical_device_.allocateMemory(alloc_info);
+    logical_device_.bindBufferMemory(buffer, memory, 0);
+
+    return { buffer, memory };
+}
+
+void Application::CreateVertexBuffer()
+{
+    vk::DeviceSize buffer_size = sizeof(SQUARE_VERTICES[0]) * SQUARE_VERTICES.size();
+
+    auto [staging_buffer, staging_buffer_memory] = CreateBuffer(
+        buffer_size,
+        vk::BufferUsageFlagBits::eTransferSrc,
+        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+
+    void* data = logical_device_.mapMemory(staging_buffer_memory, 0, buffer_size);
+    memcpy(data, SQUARE_VERTICES.data(), (size_t)buffer_size);
+    logical_device_.unmapMemory(staging_buffer_memory);
+
+    std::tie(vertex_buffer_, vertex_buffer_memory_) = CreateBuffer(
+        buffer_size,
+        vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer,
+        vk::MemoryPropertyFlagBits::eDeviceLocal);
+
+    CopyBuffer(staging_buffer, vertex_buffer_, buffer_size);
+
+    logical_device_.destroyBuffer(staging_buffer);
+    logical_device_.freeMemory(staging_buffer_memory);
+}
+
+void Application::CreateIndexBuffer()
+{
+    vk::DeviceSize buffer_size = sizeof(SQUARE_INDICES[0]) * SQUARE_INDICES.size();
+
+    auto [staging_buffer, staging_buffer_memory] = CreateBuffer(
+        buffer_size,
+        vk::BufferUsageFlagBits::eTransferSrc,
+        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+
+    void* data = logical_device_.mapMemory(staging_buffer_memory, 0, buffer_size);
+    memcpy(data, SQUARE_INDICES.data(), (size_t)buffer_size);
+    logical_device_.unmapMemory(staging_buffer_memory);
+
+    std::tie(index_buffer_, index_buffer_memory_) = CreateBuffer(
+        buffer_size,
+        vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer,
+        vk::MemoryPropertyFlagBits::eDeviceLocal);
+
+    CopyBuffer(staging_buffer, index_buffer_, buffer_size);
+
+    logical_device_.destroyBuffer(staging_buffer);
+    logical_device_.freeMemory(staging_buffer_memory);
+}
+
 void Application::CreateCommandBuffers()
 {
     vk::CommandBufferAllocateInfo alloc_info(
@@ -721,7 +867,15 @@ void Application::CreateCommandBuffers()
 
         command_buffers_[i].bindPipeline(vk::PipelineBindPoint::eGraphics, graphics_pipeline_);
 
-        command_buffers_[i].draw(3, 1, 0, 0);
+        command_buffers_[i].bindVertexBuffers(0, vertex_buffer_, { 0 });
+        command_buffers_[i].bindIndexBuffer(index_buffer_, 0, vk::IndexType::eUint16);
+        command_buffers_[i].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipeline_layout_, 0, descriptor_sets_[i], {});
+        command_buffers_[i].drawIndexed(
+            static_cast<uint32_t>(SQUARE_INDICES.size()),
+            1,
+            0,
+            0,
+            0);
 
         command_buffers_[i].endRenderPass();
         command_buffers_[i].end();
@@ -786,6 +940,8 @@ void Application::DrawFrame()
 
     images_in_flight_[image_index] = in_flight_fences_[current_frame_];
 
+    UpdateUniformBuffer(image_index);
+
     vk::PipelineStageFlags wait_dest_stage_mask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
     vk::SubmitInfo submit_info(
         image_available_semaphore_[current_frame_],
@@ -827,6 +983,13 @@ void Application::DrawFrame()
 
 void Application::CleanupSwapChain()
 {
+    for (size_t i = 0; i < swap_chain_images_.size(); ++i) {
+        logical_device_.destroyBuffer(uniform_buffers_[i]);
+        logical_device_.freeMemory(uniform_buffers_memory_[i]);
+    }
+
+    logical_device_.destroyDescriptorPool(descriptor_pool_);
+
     for (auto framebuffer : swap_chain_frame_buffers_) {
         logical_device_.destroyFramebuffer(framebuffer);
     }
@@ -860,7 +1023,154 @@ void Application::RecreateSwapChain()
     CreateRenderPass();
     CreateGraphicsPipeline();
     CreateFramebuffers();
+    CreateUniformBuffers();
+    CreateDescriptorPool();
+    CreateDescriptorSets();
     CreateCommandBuffers();
+}
+
+uint32_t Application::FindMemoryType(uint32_t type_filter, vk::MemoryPropertyFlags properties)
+{
+    auto mem_properties = physical_device_.getMemoryProperties();
+
+    for (uint32_t i = 0; i < mem_properties.memoryTypeCount; ++i) {
+        if (type_filter & (1 << i) && (mem_properties.memoryTypes[i].propertyFlags & properties) == properties) {
+            return i;
+        }
+    }
+
+    throw std::runtime_error("failed to find suitable memory type!");
+}
+
+void Application::CopyBuffer(vk::Buffer source, vk::Buffer destination, vk::DeviceSize size)
+{
+    // TODO vk::CommandPoolCreateFlagBits::eTransient command pool?
+    vk::CommandBufferAllocateInfo alloc_info(
+        command_pool_,
+        vk::CommandBufferLevel::ePrimary,
+        1);
+
+    std::vector<vk::CommandBuffer> copy_command_buffers = logical_device_.allocateCommandBuffers(alloc_info);
+    auto& copy_command_buffer = copy_command_buffers[0];
+
+    vk::CommandBufferBeginInfo begin_info(
+        vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
+
+    copy_command_buffer.begin(begin_info);
+
+    vk::BufferCopy copy_info(
+        0,
+        0,
+        size);
+
+    copy_command_buffer.copyBuffer(source, destination, copy_info);
+    copy_command_buffer.end();
+
+    vk::SubmitInfo submit_info(
+        {},
+        {},
+        copy_command_buffers,
+        {});
+
+    graphics_queue_.submit(submit_info);
+    graphics_queue_.waitIdle();
+
+    logical_device_.freeCommandBuffers(command_pool_, copy_command_buffers);
+}
+
+void Application::CreateDescriptorSetLayout()
+{
+    vk::DescriptorSetLayoutBinding ubo_layout_binding(
+        0,
+        vk::DescriptorType::eUniformBuffer,
+        1,
+        vk::ShaderStageFlagBits::eVertex);
+
+    vk::DescriptorSetLayoutCreateInfo layout_info(
+        vk::DescriptorSetLayoutCreateFlags(),
+        ubo_layout_binding);
+
+    descriptor_set_layout_ = logical_device_.createDescriptorSetLayout(layout_info);
+}
+
+void Application::CreateUniformBuffers()
+{
+    vk::DeviceSize buffer_size = sizeof(UniformBufferObject);
+
+    uniform_buffers_.resize(swap_chain_images_.size());
+    uniform_buffers_memory_.resize(swap_chain_images_.size());
+
+    for (size_t i = 0; i < swap_chain_images_.size(); ++i) {
+        std::tie(uniform_buffers_[i], uniform_buffers_memory_[i]) = CreateBuffer(buffer_size,
+            vk::BufferUsageFlagBits::eUniformBuffer,
+            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+    }
+}
+
+void Application::UpdateUniformBuffer(uint32_t index)
+{
+    static auto start_time = std::chrono::high_resolution_clock::now();
+
+    auto current_time = std::chrono::high_resolution_clock::now();
+    float time = std::chrono::duration<float, std::chrono::seconds::period>(current_time - start_time).count();
+
+    UniformBufferObject ubo{};
+    ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    ubo.proj = glm::perspective(glm::radians(45.0f), swap_chain_extent_.width / (float) swap_chain_extent_.height, 0.1f, 10.0f);
+    // compensate for incorect y coordinate in clipping space (OpenGL has it flipped compared to Vulkan)
+    ubo.proj[1][1] *= -1;
+
+    void* data = logical_device_.mapMemory(uniform_buffers_memory_[index], 0, sizeof(ubo));
+    memcpy(data, &ubo, sizeof(ubo));
+    logical_device_.unmapMemory(uniform_buffers_memory_[index]);
+}
+
+void Application::CreateDescriptorPool()
+{
+    vk::DescriptorPoolSize pool_size(
+        vk::DescriptorType::eUniformBuffer,
+        static_cast<uint32_t>(swap_chain_images_.size())
+    );
+
+    vk::DescriptorPoolCreateInfo pool_info(
+        vk::DescriptorPoolCreateFlags(),
+        static_cast<uint32_t>(swap_chain_images_.size()),
+        pool_size
+    );
+
+    descriptor_pool_ = logical_device_.createDescriptorPool(pool_info);
+}
+
+void Application::CreateDescriptorSets()
+{
+    std::vector<vk::DescriptorSetLayout> layouts(swap_chain_images_.size(), descriptor_set_layout_);
+    vk::DescriptorSetAllocateInfo alloc_info(
+        descriptor_pool_,
+        layouts
+    );
+
+    descriptor_sets_ = logical_device_.allocateDescriptorSets(alloc_info);
+
+    for (size_t i = 0; i < swap_chain_images_.size(); ++i)
+    {
+        vk::DescriptorBufferInfo buffer_info(
+            uniform_buffers_[i],
+            0,
+            sizeof(UniformBufferObject)
+        );
+
+        vk::WriteDescriptorSet descriptor_write(
+            descriptor_sets_[i],
+            0,
+            0,
+            vk::DescriptorType::eUniformBuffer,
+            {},
+            buffer_info
+        );
+
+        logical_device_.updateDescriptorSets(descriptor_write, {});
+    }
 }
 
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE

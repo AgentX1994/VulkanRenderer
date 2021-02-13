@@ -63,12 +63,24 @@ private:
     vk::ShaderModule CreateShaderModule(const std::vector<uint32_t>& code);
     void CreateFramebuffers();
     void CreateCommandPool();
-    void CreateSyncObjects();
+    std::pair<vk::Buffer, vk::DeviceMemory> CreateBuffer(
+        vk::DeviceSize size,
+        vk::BufferUsageFlags usage,
+        vk::MemoryPropertyFlags properties);
+    void CreateVertexBuffer();
+    void CreateIndexBuffer();
     void CreateCommandBuffers();
+    void CreateSyncObjects();
     void CleanupSwapChain();
     void RecreateSwapChain();
-
     void DrawFrame();
+    uint32_t FindMemoryType(uint32_t type_filter, vk::MemoryPropertyFlags properties);
+    void CopyBuffer(vk::Buffer source, vk::Buffer destination, vk::DeviceSize size);
+    void CreateDescriptorSetLayout();
+    void CreateUniformBuffers();
+    void UpdateUniformBuffer(uint32_t index);
+    void CreateDescriptorPool();
+    void CreateDescriptorSets();
 
     GLFWwindow* window_;
     vk::Instance instance_;
@@ -84,9 +96,20 @@ private:
     std::vector<vk::ImageView> swap_chain_image_views_;
     vk::RenderPass render_pass_;
     vk::Pipeline graphics_pipeline_;
+    vk::DescriptorSetLayout descriptor_set_layout_;
     vk::PipelineLayout pipeline_layout_;
     std::vector<vk::Framebuffer> swap_chain_frame_buffers_;
     vk::CommandPool command_pool_;
+    vk::DescriptorPool descriptor_pool_;
+    std::vector<vk::DescriptorSet> descriptor_sets_;
+
+    vk::Buffer vertex_buffer_;
+    vk::DeviceMemory vertex_buffer_memory_;
+    vk::Buffer index_buffer_;
+    vk::DeviceMemory index_buffer_memory_;
+    std::vector<vk::Buffer> uniform_buffers_;
+    std::vector<vk::DeviceMemory> uniform_buffers_memory_;
+
     std::vector<vk::CommandBuffer> command_buffers_;
     std::array<vk::Semaphore, MAX_FRAMES_IN_FLIGHT> image_available_semaphore_;
     std::array<vk::Semaphore, MAX_FRAMES_IN_FLIGHT> render_finished_semaphore_;

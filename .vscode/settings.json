@@ -12,7 +12,12 @@
         "type_traits": "cpp",
         "utility": "cpp",
         "variant": "cpp",
-        "stdexcept": "cpp"
+        "stdexcept": "cpp",
+        "hash_map": "cpp",
+        "bitset": "cpp",
+        "string_view": "cpp",
+        "initializer_list": "cpp",
+        "ranges": "cpp"
     },
     "glsllint.glslangValidatorArgs": "--target-env vulkan1.2"
 }

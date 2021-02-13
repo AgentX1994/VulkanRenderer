@@ -7,6 +7,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 
 find_package(Vulkan REQUIRED)
 find_package(glfw3 REQUIRED)
+find_package(glm REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(Shaderc REQUIRED IMPORTED_TARGET shaderc)
 
@@ -25,6 +26,7 @@ PUBLIC
     Vulkan::Vulkan
     glfw
     PkgConfig::Shaderc
+    glm
     ${CMAKE_DL_LIBS})
 
 add_custom_target(
