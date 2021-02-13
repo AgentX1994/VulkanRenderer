@@ -14,7 +14,8 @@ pkg_check_modules(Shaderc REQUIRED IMPORTED_TARGET shaderc)
 add_executable(VulkanTest
     src/main.cpp
     src/application.cpp
-    src/utils.cpp)
+    src/utils.cpp
+    src/stb_image.cpp)
 target_include_directories(VulkanTest
 PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -36,4 +37,12 @@ add_custom_target(
   COMMENT "Copying shaders" VERBATIM
 )
 
+add_custom_target(
+  copy_texture_files
+  COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${CMAKE_SOURCE_DIR}/textures ${CMAKE_CURRENT_BINARY_DIR}/textures
+  COMMENT "Copying textures" VERBATIM
+)
+
 add_dependencies(VulkanTest copy_shader_files)
+add_dependencies(VulkanTest copy_texture_files)

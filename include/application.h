@@ -57,6 +57,7 @@ private:
     vk::PresentModeKHR ChooseSwapPresentMode(const std::vector<vk::PresentModeKHR>& available_present_modes);
     vk::Extent2D ChooseSwapExtent(const vk::SurfaceCapabilitiesKHR& capabilities);
     void CreateSwapChain();
+    vk::ImageView CreateImageView(vk::Image image, vk::Format format);
     void CreateImageViews();
     void CreateRenderPass();
     void CreateGraphicsPipeline();
@@ -81,6 +82,28 @@ private:
     void UpdateUniformBuffer(uint32_t index);
     void CreateDescriptorPool();
     void CreateDescriptorSets();
+    std::pair<vk::Image, vk::DeviceMemory> CreateImage(
+        uint32_t width,
+        uint32_t height,
+        vk::Format format,
+        vk::ImageTiling tiling,
+        vk::ImageUsageFlags usage,
+        vk::MemoryPropertyFlags properties);
+    void CreateTextureImage();
+    vk::CommandBuffer BeginSingleTimeCommands();
+    void EndSingleTimeCommands(vk::CommandBuffer command_buffer);
+    void TransitionImageLayout(
+        vk::Image image,
+        vk::Format format,
+        vk::ImageLayout old_layout,
+        vk::ImageLayout new_layout);
+    void CopyBufferToImage(
+        vk::Buffer buffer,
+        vk::Image image,
+        uint32_t width,
+        uint32_t height);
+    void CreateTextureImageView();
+    void CreateTextureSampler();
 
     GLFWwindow* window_;
     vk::Instance instance_;
@@ -109,6 +132,11 @@ private:
     vk::DeviceMemory index_buffer_memory_;
     std::vector<vk::Buffer> uniform_buffers_;
     std::vector<vk::DeviceMemory> uniform_buffers_memory_;
+
+    vk::Image texture_image_;
+    vk::DeviceMemory texture_image_memory_;
+    vk::ImageView texture_image_view_;
+    vk::Sampler texture_sampler_;
 
     std::vector<vk::CommandBuffer> command_buffers_;
     std::array<vk::Semaphore, MAX_FRAMES_IN_FLIGHT> image_available_semaphore_;
