@@ -163,6 +163,7 @@ void Application::InitVulkan()
     CreateRenderPass();
     CreateCommandPool();
     CreateDescriptorSetLayout();
+    CreateColorResources();
     CreateDepthResources();
     CreateGraphicsPipeline();
     CreateFramebuffers();
@@ -453,8 +454,15 @@ void Application::CreateLogicalDevice()
          &priority}  // Present queue
     };
 
+    // If the queues are the same, just request two of the same queue
+    if (indices.graphics_family.value() == indices.present_family.value()) {
+        queue_create_infos.pop_back();
+        queue_create_infos[0].queueCount += 1;
+    }
+
     vk::PhysicalDeviceFeatures device_features;
     device_features.samplerAnisotropy = VK_TRUE;
+    device_features.sampleRateShading = VK_TRUE;
 
     vk::DeviceCreateInfo create_info;
     create_info.pQueueCreateInfos = queue_create_infos.data();
@@ -471,8 +479,13 @@ void Application::CreateLogicalDevice()
 
     graphics_queue_ =
         logical_device_.getQueue(indices.graphics_family.value(), 0);
-    present_queue_ =
-        logical_device_.getQueue(indices.present_family.value(), 0);
+    if (indices.graphics_family.value() == indices.present_family.value()) {
+        present_queue_ =
+            logical_device_.getQueue(indices.present_family.value(), 1);
+    } else {
+        present_queue_ =
+            logical_device_.getQueue(indices.present_family.value(), 0);
+    }
     VULKAN_HPP_DEFAULT_DISPATCHER.init(logical_device_);
 }
 
@@ -580,17 +593,24 @@ void Application::CreateRenderPass()
 {
     vk::AttachmentDescription color_attachment(
         vk::AttachmentDescriptionFlags(), swap_chain_image_format_,
-        vk::SampleCountFlagBits::e1, vk::AttachmentLoadOp::eClear,
+        msaa_samples_, vk::AttachmentLoadOp::eClear,
+        vk::AttachmentStoreOp::eStore, vk::AttachmentLoadOp::eDontCare,
+        vk::AttachmentStoreOp::eDontCare, vk::ImageLayout::eUndefined,
+        vk::ImageLayout::eColorAttachmentOptimal);
+
+    vk::AttachmentDescription depth_attachment(
+        vk::AttachmentDescriptionFlags(), FindDepthFormat(), msaa_samples_,
+        vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eDontCare,
+        vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eDontCare,
+        vk::ImageLayout::eUndefined,
+        vk::ImageLayout::eDepthStencilAttachmentOptimal);
+
+    vk::AttachmentDescription color_attachment_resolve(
+        vk::AttachmentDescriptionFlags(), swap_chain_image_format_,
+        vk::SampleCountFlagBits::e1, vk::AttachmentLoadOp::eDontCare,
         vk::AttachmentStoreOp::eStore, vk::AttachmentLoadOp::eDontCare,
         vk::AttachmentStoreOp::eDontCare, vk::ImageLayout::eUndefined,
         vk::ImageLayout::ePresentSrcKHR);
-
-    vk::AttachmentDescription depth_attachment(
-        vk::AttachmentDescriptionFlags(), FindDepthFormat(),
-        vk::SampleCountFlagBits::e1, vk::AttachmentLoadOp::eClear,
-        vk::AttachmentStoreOp::eDontCare, vk::AttachmentLoadOp::eDontCare,
-        vk::AttachmentStoreOp::eDontCare, vk::ImageLayout::eUndefined,
-        vk::ImageLayout::eDepthStencilAttachmentOptimal);
 
     vk::AttachmentReference color_attachment_ref(
         0, vk::ImageLayout::eColorAttachmentOptimal);
@@ -598,9 +618,13 @@ void Application::CreateRenderPass()
     vk::AttachmentReference depth_attachment_ref(
         1, vk::ImageLayout::eDepthStencilAttachmentOptimal);
 
+    vk::AttachmentReference color_attachment_resolve_ref(
+        2, vk::ImageLayout::eColorAttachmentOptimal);
+
     vk::SubpassDescription subpass(
         vk::SubpassDescriptionFlags(), vk::PipelineBindPoint::eGraphics, {},
-        color_attachment_ref, {}, &depth_attachment_ref, {});
+        color_attachment_ref, color_attachment_resolve_ref,
+        &depth_attachment_ref, {});
 
     vk::SubpassDependency dependency(
         VK_SUBPASS_EXTERNAL, 0,
@@ -612,8 +636,8 @@ void Application::CreateRenderPass()
         vk::AccessFlagBits::eColorAttachmentWrite |
             vk::AccessFlagBits::eDepthStencilAttachmentWrite);
 
-    std::array<vk::AttachmentDescription, 2> attachments = {
-        {color_attachment, depth_attachment}};
+    std::array<vk::AttachmentDescription, 3> attachments = {
+        {color_attachment, depth_attachment, color_attachment_resolve}};
 
     vk::RenderPassCreateInfo render_pass_info(vk::RenderPassCreateFlags(),
                                               attachments, subpass, dependency);
@@ -689,8 +713,8 @@ void Application::CreateGraphicsPipeline()
         vk::FrontFace::eCounterClockwise, VK_FALSE, 0.0f, 0.0f, 0.0f, 1.0f);
 
     vk::PipelineMultisampleStateCreateInfo multisampling(
-        vk::PipelineMultisampleStateCreateFlags(), vk::SampleCountFlagBits::e1,
-        VK_FALSE, 1.0f, nullptr, VK_FALSE, VK_FALSE);
+        vk::PipelineMultisampleStateCreateFlags(), msaa_samples_, VK_TRUE, 0.2f,
+        nullptr, VK_FALSE, VK_FALSE);
 
     vk::PipelineColorBlendAttachmentState color_blend_attachment(
         VK_TRUE, vk::BlendFactor::eSrcAlpha, vk::BlendFactor::eOneMinusSrcAlpha,
@@ -757,8 +781,8 @@ void Application::CreateFramebuffers()
     swap_chain_frame_buffers_.resize(swap_chain_images_.size());
 
     for (size_t i = 0; i < swap_chain_image_views_.size(); ++i) {
-        std::array<vk::ImageView, 2> attachments = {swap_chain_image_views_[i],
-                                                    depth_image_view_};
+        std::array<vk::ImageView, 3> attachments = {
+            color_image_view_, depth_image_view_, swap_chain_image_views_[i]};
 
         vk::FramebufferCreateInfo framebuffer_info(
             vk::FramebufferCreateFlags(), render_pass_, attachments,
@@ -1005,6 +1029,10 @@ void Application::DrawFrame()
 
 void Application::CleanupSwapChain()
 {
+    logical_device_.destroyImageView(color_image_view_);
+    logical_device_.destroyImage(color_image_);
+    logical_device_.freeMemory(color_image_memory_);
+
     logical_device_.destroyImageView(depth_image_view_);
     logical_device_.destroyImage(depth_image_);
     logical_device_.freeMemory(depth_image_memory_);
@@ -1048,6 +1076,7 @@ void Application::RecreateSwapChain()
     CreateImageViews();
     CreateRenderPass();
     CreateGraphicsPipeline();
+    CreateColorResources();
     CreateDepthResources();
     CreateFramebuffers();
     CreateUniformBuffers();
@@ -1195,7 +1224,8 @@ void Application::CreateDescriptorSets()
 }
 
 std::pair<vk::Image, vk::DeviceMemory> Application::CreateImage(
-    uint32_t width, uint32_t height, uint32_t mip_levels, vk::Format format,
+    uint32_t width, uint32_t height, uint32_t mip_levels,
+    vk::SampleCountFlagBits num_samples, vk::Format format,
     vk::ImageTiling tiling, vk::ImageUsageFlags usage,
     vk::MemoryPropertyFlags properties)
 {
@@ -1203,8 +1233,8 @@ std::pair<vk::Image, vk::DeviceMemory> Application::CreateImage(
 
     vk::ImageCreateInfo image_info(
         vk::ImageCreateFlags(), vk::ImageType::e2D, format, {width, height, 1},
-        mip_levels, 1, vk::SampleCountFlagBits::e1, tiling, usage,
-        vk::SharingMode::eExclusive, {}, vk::ImageLayout::eUndefined);
+        mip_levels, 1, num_samples, tiling, usage, vk::SharingMode::eExclusive,
+        {}, vk::ImageLayout::eUndefined);
 
     vk::Image image = logical_device_.createImage(image_info);
 
@@ -1248,13 +1278,13 @@ void Application::CreateTextureImage()
 
     stbi_image_free(pixels);
 
-    std::tie(texture_image_, texture_image_memory_) =
-        CreateImage(texture_width, texture_height, mip_levels_,
-                    vk::Format::eR8G8B8A8Srgb, vk::ImageTiling::eOptimal,
-                    vk::ImageUsageFlagBits::eTransferSrc |
-                        vk::ImageUsageFlagBits::eTransferDst |
-                        vk::ImageUsageFlagBits::eSampled,
-                    vk::MemoryPropertyFlagBits::eDeviceLocal);
+    std::tie(texture_image_, texture_image_memory_) = CreateImage(
+        texture_width, texture_height, mip_levels_, vk::SampleCountFlagBits::e1,
+        vk::Format::eR8G8B8A8Srgb, vk::ImageTiling::eOptimal,
+        vk::ImageUsageFlagBits::eTransferSrc |
+            vk::ImageUsageFlagBits::eTransferDst |
+            vk::ImageUsageFlagBits::eSampled,
+        vk::MemoryPropertyFlagBits::eDeviceLocal);
 
     TransitionImageLayout(texture_image_, vk::Format::eR8G8B8A8Srgb,
                           vk::ImageLayout::eUndefined,
@@ -1444,7 +1474,7 @@ void Application::CreateDepthResources()
 
     std::tie(depth_image_, depth_image_memory_) =
         CreateImage(swap_chain_extent_.width, swap_chain_extent_.height, 1,
-                    depth_format, vk::ImageTiling::eOptimal,
+                    msaa_samples_, depth_format, vk::ImageTiling::eOptimal,
                     vk::ImageUsageFlagBits::eDepthStencilAttachment,
                     vk::MemoryPropertyFlagBits::eDeviceLocal);
 
@@ -1554,9 +1584,9 @@ void Application::GenerateMipMaps(vk::Image image, vk::Format format,
         barrier.srcAccessMask = vk::AccessFlagBits::eTransferRead;
         barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
 
-        command_buffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
-                                       vk::PipelineStageFlagBits::eTransfer, {},
-                                       {}, {}, barrier);
+        command_buffer.pipelineBarrier(
+            vk::PipelineStageFlagBits::eTransfer,
+            vk::PipelineStageFlagBits::eFragmentShader, {}, {}, {}, barrier);
 
         if (mip_width > 1) {
             mip_width /= 2;
@@ -1573,13 +1603,13 @@ void Application::GenerateMipMaps(vk::Image image, vk::Format format,
     barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
 
     command_buffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
-                                   vk::PipelineStageFlagBits::eTransfer, {}, {},
-                                   {}, barrier);
+                                   vk::PipelineStageFlagBits::eFragmentShader,
+                                   {}, {}, {}, barrier);
 
     EndSingleTimeCommands(command_buffer);
 }
 
-vk::SampleCountFlags Application::GetMaxUsableSampleCount()
+vk::SampleCountFlagBits Application::GetMaxUsableSampleCount()
 {
     auto phys_dev_props = physical_device_.getProperties();
 
@@ -1607,6 +1637,20 @@ vk::SampleCountFlags Application::GetMaxUsableSampleCount()
     }
 
     return vk::SampleCountFlagBits::e1;
+}
+
+void Application::CreateColorResources()
+{
+    vk::Format color_format = swap_chain_image_format_;
+
+    std::tie(color_image_, color_image_memory_) =
+        CreateImage(swap_chain_extent_.width, swap_chain_extent_.height, 1,
+                    msaa_samples_, color_format, vk::ImageTiling::eOptimal,
+                    vk::ImageUsageFlagBits::eTransientAttachment |
+                        vk::ImageUsageFlagBits::eColorAttachment,
+                    vk::MemoryPropertyFlagBits::eDeviceLocal);
+    color_image_view_ = CreateImageView(color_image_, color_format,
+                                        vk::ImageAspectFlagBits::eColor, 1);
 }
 
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE

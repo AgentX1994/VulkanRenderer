@@ -109,7 +109,8 @@ class Application
     void CreateDescriptorPool();
     void CreateDescriptorSets();
     std::pair<vk::Image, vk::DeviceMemory> CreateImage(
-        uint32_t width, uint32_t height, uint32_t mip_levels, vk::Format format,
+        uint32_t width, uint32_t height, uint32_t mip_levels,
+        vk::SampleCountFlagBits num_samples, vk::Format format,
         vk::ImageTiling tiling, vk::ImageUsageFlags usage,
         vk::MemoryPropertyFlags properties);
     void CreateTextureImage();
@@ -132,7 +133,8 @@ class Application
     void GenerateMipMaps(vk::Image image, vk::Format format,
                          int32_t texture_width, int32_t texture_height,
                          uint32_t mip_levels);
-    vk::SampleCountFlags GetMaxUsableSampleCount();
+    vk::SampleCountFlagBits GetMaxUsableSampleCount();
+    void CreateColorResources();
 
     GLFWwindow* window_;
     vk::Instance instance_;
@@ -167,6 +169,10 @@ class Application
     std::vector<vk::Buffer> uniform_buffers_;
     std::vector<vk::DeviceMemory> uniform_buffers_memory_;
 
+    vk::Image color_image_;
+    vk::DeviceMemory color_image_memory_;
+    vk::ImageView color_image_view_;
+
     uint32_t mip_levels_;
     vk::Image texture_image_;
     vk::DeviceMemory texture_image_memory_;
@@ -177,7 +183,7 @@ class Application
     vk::DeviceMemory depth_image_memory_;
     vk::ImageView depth_image_view_;
 
-    vk::SampleCountFlags msaa_samples_ = vk::SampleCountFlagBits::e1;
+    vk::SampleCountFlagBits msaa_samples_ = vk::SampleCountFlagBits::e1;
 
     std::vector<vk::CommandBuffer> command_buffers_;
 
