@@ -14,11 +14,11 @@ pkg_check_modules(Shaderc REQUIRED IMPORTED_TARGET shaderc)
 add_subdirectory(third_party)
 
 add_executable(VulkanTest
-    src/main.cpp
-    src/application.cpp
-    src/utils.cpp
-    src/stb_image.cpp
-    src/tiny_obj_loader.cpp)
+  src/main.cpp
+  src/application.cpp
+  src/utils.cpp
+  src/stb_image.cpp
+  src/tiny_obj_loader.cpp)
 target_include_directories(VulkanTest
 PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -27,12 +27,26 @@ PUBLIC
 
 target_link_libraries(VulkanTest
 PUBLIC
-    Imgui::Imgui
-    Vulkan::Vulkan
-    glfw
-    PkgConfig::Shaderc
+  Imgui::Imgui
+  Vulkan::Vulkan
+  glfw
+  PkgConfig::Shaderc
+  ${CMAKE_DL_LIBS})
+
+# On my Ubuntu install, glm is glm::glm,
+# But on Arch, it is glm
+# link with whichever exists
+if (TARGET glm::glm)
+  target_link_libraries(VulkanTest
+  PUBLIC
+    glm::glm
+  )
+else()
+  target_link_libraries(VulkanTest
+  PUBLIC
     glm
-    ${CMAKE_DL_LIBS})
+  )
+endif()
 
 add_custom_target(
   copy_shader_files
