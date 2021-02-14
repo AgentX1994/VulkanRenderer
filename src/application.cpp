@@ -1760,9 +1760,9 @@ void Application::SetupImgui()
     {
         vk::AttachmentDescription attachment(
             vk::AttachmentDescriptionFlags(), swap_chain_image_format_,
-            vk::SampleCountFlagBits::e1, vk::AttachmentLoadOp::eDontCare,
+            vk::SampleCountFlagBits::e1, vk::AttachmentLoadOp::eLoad,
             vk::AttachmentStoreOp::eStore, vk::AttachmentLoadOp::eDontCare,
-            vk::AttachmentStoreOp::eDontCare, vk::ImageLayout::eUndefined,
+            vk::AttachmentStoreOp::eDontCare, vk::ImageLayout::eColorAttachmentOptimal,
             vk::ImageLayout::ePresentSrcKHR);
 
         vk::AttachmentReference color_attachment(
