@@ -11,6 +11,8 @@ find_package(glm REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(Shaderc REQUIRED IMPORTED_TARGET shaderc)
 
+add_subdirectory(third_party)
+
 add_executable(VulkanTest
     src/main.cpp
     src/application.cpp
@@ -25,10 +27,11 @@ PUBLIC
 
 target_link_libraries(VulkanTest
 PUBLIC
+    Imgui::Imgui
     Vulkan::Vulkan
     glfw
     PkgConfig::Shaderc
-    glm::glm
+    glm
     ${CMAKE_DL_LIBS})
 
 add_custom_target(

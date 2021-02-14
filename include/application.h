@@ -63,6 +63,7 @@ class Application
    private:
     void InitWindow();
     void InitVulkan();
+    void SetupImgui();
     void MainLoop();
     void Cleanup();
 
@@ -149,6 +150,8 @@ class Application
     vk::Queue present_queue_;
     vk::SurfaceKHR surface_;
     vk::SwapchainKHR swapchain_;
+    uint32_t min_image_count_;
+    uint32_t image_count_;
     std::vector<vk::Image> swap_chain_images_;
     vk::Format swap_chain_image_format_;
     vk::Extent2D swap_chain_extent_;
@@ -196,6 +199,13 @@ class Application
     std::array<vk::Semaphore, MAX_FRAMES_IN_FLIGHT> render_finished_semaphore_;
     std::array<vk::Fence, MAX_FRAMES_IN_FLIGHT> in_flight_fences_;
     std::vector<vk::Fence> images_in_flight_;
+
+    bool imgui_display_ = false;
+    vk::DescriptorPool imgui_descriptor_pool_;
+    vk::RenderPass imgui_render_pass_;
+    vk::CommandPool imgui_command_pool_;
+    std::vector<vk::CommandBuffer> imgui_command_buffers_;
+    std::vector<vk::Framebuffer> imgui_frame_buffers_;
 
     size_t current_frame_ = 0;
     bool framebuffer_resized_ = false;
