@@ -356,13 +356,13 @@ QueueFamilyIndices Application::FindQueueFamilies(
 
     auto queue_families = device.getQueueFamilyProperties();
 
-    int i = 0;
+    uint32_t i = 0;
     for (const auto& queue_family : queue_families) {
         if (queue_family.queueFlags & vk::QueueFlagBits::eGraphics) {
-            indices.graphics_family = i;
+            indices.graphics_family = {i, queue_family};
         }
         if (device.getSurfaceSupportKHR(i, surface_)) {
-            indices.present_family = i;
+            indices.present_family = {i, queue_family};
         }
 
         if (indices.IsComplete()) {
@@ -448,16 +448,18 @@ void Application::CreateLogicalDevice()
 
     float priority = 1.0f;
     std::vector<vk::DeviceQueueCreateInfo> queue_create_infos = {
-        {vk::DeviceQueueCreateFlags(), indices.graphics_family.value(), 1,
+        {vk::DeviceQueueCreateFlags(), indices.graphics_family.value().index, 1,
          &priority},  // Graphics queue
-        {vk::DeviceQueueCreateFlags(), indices.present_family.value(), 1,
+        {vk::DeviceQueueCreateFlags(), indices.present_family.value().index, 1,
          &priority}  // Present queue
     };
 
     // If the queues are the same, just request two of the same queue
-    if (indices.graphics_family.value() == indices.present_family.value()) {
+    if (indices.graphics_family.value().index == indices.present_family.value().index) {
         queue_create_infos.pop_back();
-        queue_create_infos[0].queueCount += 1;
+        if (indices.graphics_family.value().properties.queueCount > 1) {
+            queue_create_infos[0].queueCount += 1;
+        }
     }
 
     vk::PhysicalDeviceFeatures device_features;
@@ -478,13 +480,13 @@ void Application::CreateLogicalDevice()
     logical_device_ = physical_device_.createDevice(create_info);
 
     graphics_queue_ =
-        logical_device_.getQueue(indices.graphics_family.value(), 0);
-    if (indices.graphics_family.value() == indices.present_family.value()) {
+        logical_device_.getQueue(indices.graphics_family.value().index, 0);
+    if (indices.graphics_family.value().index == indices.present_family.value().index && indices.graphics_family.value().properties.queueCount > 1) {
         present_queue_ =
-            logical_device_.getQueue(indices.present_family.value(), 1);
+            logical_device_.getQueue(indices.present_family.value().index, 1);
     } else {
         present_queue_ =
-            logical_device_.getQueue(indices.present_family.value(), 0);
+            logical_device_.getQueue(indices.present_family.value().index, 0);
     }
     VULKAN_HPP_DEFAULT_DISPATCHER.init(logical_device_);
 }
@@ -562,14 +564,14 @@ void Application::CreateSwapChain()
     }
 
     auto indices = FindQueueFamilies(physical_device_);
-    uint32_t queue_family_indices[] = {indices.graphics_family.value(),
-                                       indices.present_family.value()};
+    uint32_t queue_family_indices[] = {indices.graphics_family.value().index,
+                                       indices.present_family.value().index};
 
     vk::SharingMode sharing_mode = vk::SharingMode::eExclusive;
     uint32_t queue_family_index_count = 0;
     const uint32_t* queue_family_indices_arg = nullptr;
 
-    if (indices.graphics_family != indices.present_family) {
+    if (indices.graphics_family.value().index != indices.present_family.value().index) {
         sharing_mode = vk::SharingMode::eConcurrent;
         queue_family_index_count = 2;
         queue_family_indices_arg = queue_family_indices;
@@ -798,7 +800,7 @@ void Application::CreateCommandPool()
     auto indices = FindQueueFamilies(physical_device_);
 
     vk::CommandPoolCreateInfo pool_info(vk::CommandPoolCreateFlags(),
-                                        indices.graphics_family.value());
+                                        indices.graphics_family.value().index);
 
     command_pool_ = logical_device_.createCommandPool(pool_info);
 }

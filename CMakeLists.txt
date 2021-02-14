@@ -28,7 +28,7 @@ PUBLIC
     Vulkan::Vulkan
     glfw
     PkgConfig::Shaderc
-    glm
+    glm::glm
     ${CMAKE_DL_LIBS})
 
 add_custom_target(

@@ -14,10 +14,15 @@
 #define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
 #include <vulkan/vulkan.hpp>
 
+struct QueueFamilyInfo {
+    uint32_t index;
+    vk::QueueFamilyProperties properties;
+};
+
 struct QueueFamilyIndices
 {
-    std::optional<uint32_t> graphics_family;
-    std::optional<uint32_t> present_family;
+    std::optional<QueueFamilyInfo> graphics_family;
+    std::optional<QueueFamilyInfo> present_family;
 
     inline bool IsComplete()
     {
