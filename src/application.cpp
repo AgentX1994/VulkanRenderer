@@ -573,10 +573,9 @@ void Application::CreateSwapChain()
     auto present_mode = ChooseSwapPresentMode(details.present_modes);
     auto extent = ChooseSwapExtent(details.capabilities);
 
-    min_image_count_ = details.capabilities.minImageCount;
-    image_count_ = details.capabilities.minImageCount + 1;
+    min_image_count_ = details.capabilities.minImageCount + 1;
     if (details.capabilities.maxImageCount > 0) {
-        image_count_ =
+        min_image_count_ =
             std::min(image_count_, details.capabilities.maxImageCount);
     }
 
@@ -596,7 +595,7 @@ void Application::CreateSwapChain()
     }
 
     vk::SwapchainCreateInfoKHR swap_chain_info(
-        vk::SwapchainCreateFlagsKHR(), surface_, image_count_,
+        vk::SwapchainCreateFlagsKHR(), surface_, min_image_count_,
         surface_format.format, surface_format.colorSpace, extent, 1,
         vk::ImageUsageFlagBits::eColorAttachment, sharing_mode,
         queue_family_index_count, queue_family_indices_arg,
@@ -605,6 +604,7 @@ void Application::CreateSwapChain()
 
     swapchain_ = logical_device_.createSwapchainKHR(swap_chain_info);
     swap_chain_images_ = logical_device_.getSwapchainImagesKHR(swapchain_);
+    image_count_ = swap_chain_images_.size();
     swap_chain_image_format_ = surface_format.format;
     swap_chain_extent_ = extent;
 }
