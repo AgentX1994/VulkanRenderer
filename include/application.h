@@ -147,6 +147,7 @@ class Application
     void CreateImGuiFramebuffers();
     void CreateImGuiCommandBuffers();
     void ResizeImGui();
+    void Update(float delta_time);
 
     GLFWwindow* window_;
     vk::Instance instance_;
@@ -171,8 +172,8 @@ class Application
     vk::DescriptorPool descriptor_pool_;
     std::vector<vk::DescriptorSet> descriptor_sets_;
 
-    std::vector<Vertex> vertices;
-    std::vector<uint32_t> indices;
+    std::vector<Vertex> vertices_;
+    std::vector<uint32_t> indices_;
 
     vk::Buffer vertex_buffer_;
     vk::DeviceMemory vertex_buffer_memory_;
@@ -216,7 +217,12 @@ class Application
     ImGuiStyle imgui_style_;
 
     size_t current_frame_ = 0;
+    float frames_per_second_ = 0.0f;
     bool framebuffer_resized_ = false;
     float window_scaling_ = 1.0f;
+    float rotation_rate_ = 1.0f;
+    float current_model_rotation_degrees_ = 0.0f;
+    uint32_t vertex_count_;
+    uint32_t tri_count_;
     vk::DebugUtilsMessengerEXT debug_messenger_;
 };

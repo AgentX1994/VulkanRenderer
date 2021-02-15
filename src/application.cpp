@@ -206,9 +206,15 @@ void Application::InitVulkan()
 
 void Application::MainLoop()
 {
+    double previous_time = glfwGetTime();
     while (!glfwWindowShouldClose(window_)) {
         glfwPollEvents();
+        double current_time = glfwGetTime();
+        double delta = current_time - previous_time;
+        frames_per_second_ = 1.0f / delta;
+        Update(delta);
         DrawFrame();
+        previous_time = current_time;
     }
 
     logical_device_.waitIdle();
@@ -865,7 +871,7 @@ std::pair<vk::Buffer, vk::DeviceMemory> Application::CreateBuffer(
 
 void Application::CreateVertexBuffer()
 {
-    vk::DeviceSize buffer_size = sizeof(vertices[0]) * vertices.size();
+    vk::DeviceSize buffer_size = sizeof(vertices_[0]) * vertices_.size();
 
     auto [staging_buffer, staging_buffer_memory] =
         CreateBuffer(buffer_size, vk::BufferUsageFlagBits::eTransferSrc,
@@ -874,7 +880,7 @@ void Application::CreateVertexBuffer()
 
     void* data =
         logical_device_.mapMemory(staging_buffer_memory, 0, buffer_size);
-    memcpy(data, vertices.data(), (size_t)buffer_size);
+    memcpy(data, vertices_.data(), (size_t)buffer_size);
     logical_device_.unmapMemory(staging_buffer_memory);
 
     std::tie(vertex_buffer_, vertex_buffer_memory_) =
@@ -891,7 +897,7 @@ void Application::CreateVertexBuffer()
 
 void Application::CreateIndexBuffer()
 {
-    vk::DeviceSize buffer_size = sizeof(indices[0]) * indices.size();
+    vk::DeviceSize buffer_size = sizeof(indices_[0]) * indices_.size();
 
     auto [staging_buffer, staging_buffer_memory] =
         CreateBuffer(buffer_size, vk::BufferUsageFlagBits::eTransferSrc,
@@ -900,7 +906,7 @@ void Application::CreateIndexBuffer()
 
     void* data =
         logical_device_.mapMemory(staging_buffer_memory, 0, buffer_size);
-    memcpy(data, indices.data(), (size_t)buffer_size);
+    memcpy(data, indices_.data(), (size_t)buffer_size);
     logical_device_.unmapMemory(staging_buffer_memory);
 
     std::tie(index_buffer_, index_buffer_memory_) =
@@ -950,7 +956,7 @@ void Application::CreateCommandBuffers()
         command_buffers_[i].bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
                                                pipeline_layout_, 0,
                                                descriptor_sets_[i], {});
-        command_buffers_[i].drawIndexed(static_cast<uint32_t>(indices.size()),
+        command_buffers_[i].drawIndexed(static_cast<uint32_t>(indices_.size()),
                                         1, 0, 0, 0);
 
         command_buffers_[i].endRenderPass();
@@ -1035,8 +1041,14 @@ void Application::DrawFrame()
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
-    //ImGui::ShowMetricsWindow(&imgui_display_);
-    ImGui::ShowDemoWindow(&imgui_display_);
+    if (ImGui::Begin("Stats", &imgui_display_))
+    {
+        ImGui::Text("%u vertices", vertex_count_);
+        ImGui::Text("%u triangles", tri_count_);
+        ImGui::Text("%.02f FPS", frames_per_second_);
+        ImGui::DragFloat("Rotation Rate", &rotation_rate_, 0.1f, -60.0f, 60.0f, "%.02f RPM", ImGuiSliderFlags_None);
+    }
+    ImGui::End();
     ImGui::Render();
     {
         vk::CommandBufferBeginInfo begin_info(
@@ -1227,15 +1239,8 @@ void Application::CreateUniformBuffers()
 
 void Application::UpdateUniformBuffer(uint32_t index)
 {
-    static auto start_time = std::chrono::high_resolution_clock::now();
-
-    auto current_time = std::chrono::high_resolution_clock::now();
-    float time = std::chrono::duration<float, std::chrono::seconds::period>(
-                     current_time - start_time)
-                     .count();
-
     UniformBufferObject ubo{};
-    ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f),
+    ubo.model = glm::rotate(glm::mat4(1.0f), glm::radians(current_model_rotation_degrees_),
                             glm::vec3(0.0f, 0.0f, 1.0f));
     ubo.view =
         glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f),
@@ -1594,13 +1599,16 @@ void Application::LoadModel()
 
             if (unique_vertices.count(vertex) == 0) {
                 unique_vertices[vertex] =
-                    static_cast<uint32_t>(vertices.size());
-                vertices.push_back(vertex);
+                    static_cast<uint32_t>(vertices_.size());
+                vertices_.push_back(vertex);
             }
 
-            indices.push_back(unique_vertices[vertex]);
+            indices_.push_back(unique_vertices[vertex]);
         }
     }
+
+    vertex_count_ = vertices_.size();
+    tri_count_ = indices_.size() / 3;
 }
 
 void Application::GenerateMipMaps(vk::Image image, vk::Format format,
@@ -1850,7 +1858,7 @@ void Application::ResizeImGui()
     ImGuiIO& io = ImGui::GetIO();
     io.Fonts->Clear();
     io.Fonts->AddFontFromFileTTF(
-        "/usr/share/fonts/TTF/FiraCode-Regular.ttf",
+        "/usr/share/fonts/truetype/firacode/FiraCode-Regular.ttf",
         std::floor(window_scaling_ * 13.0f));
 
     auto command_buffer = BeginSingleTimeCommands();
@@ -1859,6 +1867,14 @@ void Application::ResizeImGui()
 
     ImGui::StyleColorsDark(&imgui_style_);
     imgui_style_.ScaleAllSizes(window_scaling_);
+}
+
+void Application::Update(float delta_time)
+{
+    // rotation_rate_ = RPM
+    // RPS = RPM * 60
+    current_model_rotation_degrees_ = delta_time * rotation_rate_ * 60 + current_model_rotation_degrees_;
+    current_model_rotation_degrees_ = std::fmod(current_model_rotation_degrees_, 360.0f);
 }
 
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
