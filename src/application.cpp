@@ -577,7 +577,7 @@ void Application::CreateSwapChain()
     min_image_count_ = details.capabilities.minImageCount + 1;
     if (details.capabilities.maxImageCount > 0) {
         min_image_count_ =
-            std::min(image_count_, details.capabilities.maxImageCount);
+            std::min(min_image_count_, details.capabilities.maxImageCount);
     }
 
     auto indices = FindQueueFamilies(physical_device_);
