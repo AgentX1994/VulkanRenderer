@@ -148,6 +148,7 @@ void Application::InitWindow()
     glfwInit();
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+    glfwWindowHint(GLFW_SCALE_TO_MONITOR, GLFW_TRUE);
 
     window_ =
         glfwCreateWindow(WIDTH, HEIGHT, "Vulkan window", nullptr, nullptr);
