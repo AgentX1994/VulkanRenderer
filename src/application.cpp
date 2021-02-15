@@ -135,12 +135,27 @@ void Application::Run()
     Cleanup();
 }
 
-void Application::SetFramebufferResized() { framebuffer_resized_ = true; }
-
 static void FramebufferResizeCallback(GLFWwindow* window, int width, int height)
 {
     auto app = reinterpret_cast<Application*>(glfwGetWindowUserPointer(window));
     app->SetFramebufferResized();
+}
+
+static void WindowContentScaleCallback(GLFWwindow* window, float xscale,
+                                       float yscale)
+{
+    assert(xscale == yscale);
+    auto app = reinterpret_cast<Application*>(glfwGetWindowUserPointer(window));
+    app->SetRenderScaling(xscale);
+}
+
+void Application::SetFramebufferResized() { framebuffer_resized_ = true; }
+void Application::SetRenderScaling(float scale)
+{
+    window_scaling_ = scale;
+
+    // Rescale ImGui
+    ResizeImGui();
 }
 
 void Application::InitWindow()
@@ -153,6 +168,10 @@ void Application::InitWindow()
     window_ =
         glfwCreateWindow(WIDTH, HEIGHT, "Vulkan window", nullptr, nullptr);
     glfwSetWindowUserPointer(window_, this);
+    float xscale, yscale;
+    glfwGetWindowContentScale(window_, &xscale, &yscale);
+    assert(xscale == yscale);  // we are assuming this
+    window_scaling_ = xscale;
     glfwSetFramebufferSizeCallback(window_, FramebufferResizeCallback);
 }
 
@@ -1016,12 +1035,12 @@ void Application::DrawFrame()
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
-    ImGui::ShowMetricsWindow(&imgui_display_);
+    //ImGui::ShowMetricsWindow(&imgui_display_);
+    ImGui::ShowDemoWindow(&imgui_display_);
     ImGui::Render();
     {
         vk::CommandBufferBeginInfo begin_info(
-            vk::CommandBufferUsageFlagBits::eOneTimeSubmit
-        );
+            vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
         imgui_command_buffers_[image_index].begin(begin_info);
         vk::ClearValue clear_value;
         clear_value.color.setFloat32({{0.0f, 0.0f, 0.0f, 1.0f}});
@@ -1138,19 +1157,8 @@ void Application::RecreateSwapChain()
     CreateCommandBuffers();
 
     ImGui_ImplVulkan_SetMinImageCount(min_image_count_);
-
-    vk::CommandBufferAllocateInfo command_buffer_info(
-        imgui_command_pool_, vk::CommandBufferLevel::ePrimary, image_count_);
-    imgui_command_buffers_ =
-        logical_device_.allocateCommandBuffers(command_buffer_info);
-    imgui_frame_buffers_.resize(image_count_);
-    for (uint32_t i = 0; i < image_count_; ++i) {
-        vk::FramebufferCreateInfo info(
-            vk::FramebufferCreateFlags(), imgui_render_pass_,
-            swap_chain_image_views_[i], swap_chain_extent_.width,
-            swap_chain_extent_.height, 1);
-        imgui_frame_buffers_[i] = logical_device_.createFramebuffer(info);
-    }
+    CreateImGuiCommandBuffers();
+    CreateImGuiFramebuffers();
 }
 
 uint32_t Application::FindMemoryType(uint32_t type_filter,
@@ -1733,7 +1741,6 @@ void Application::SetupImgui()
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
-    (void)io;
 
     // Create descriptor pool just for ImGui
     // not sure if this is necessary...
@@ -1763,7 +1770,8 @@ void Application::SetupImgui()
             vk::AttachmentDescriptionFlags(), swap_chain_image_format_,
             vk::SampleCountFlagBits::e1, vk::AttachmentLoadOp::eLoad,
             vk::AttachmentStoreOp::eStore, vk::AttachmentLoadOp::eDontCare,
-            vk::AttachmentStoreOp::eDontCare, vk::ImageLayout::eColorAttachmentOptimal,
+            vk::AttachmentStoreOp::eDontCare,
+            vk::ImageLayout::eColorAttachmentOptimal,
             vk::ImageLayout::ePresentSrcKHR);
 
         vk::AttachmentReference color_attachment(
@@ -1793,26 +1801,12 @@ void Application::SetupImgui()
         imgui_command_pool_ =
             logical_device_.createCommandPool(command_pool_info);
 
-        vk::CommandBufferAllocateInfo command_buffer_info(
-            imgui_command_pool_, vk::CommandBufferLevel::ePrimary,
-            image_count_);
-        imgui_command_buffers_ =
-            logical_device_.allocateCommandBuffers(command_buffer_info);
+        CreateImGuiCommandBuffers();
     }
 
     // Create framebuffers
-    {
-        imgui_frame_buffers_.resize(image_count_);
-        for (uint32_t i = 0; i < image_count_; ++i) {
-            vk::FramebufferCreateInfo info(
-                vk::FramebufferCreateFlags(), imgui_render_pass_,
-                swap_chain_image_views_[i], swap_chain_extent_.width,
-                swap_chain_extent_.height, 1);
-            imgui_frame_buffers_[i] = logical_device_.createFramebuffer(info);
-        }
-    }
+    CreateImGuiFramebuffers();
 
-    ImGui::StyleColorsDark();
     ImGui_ImplGlfw_InitForVulkan(window_, true);
     ImGui_ImplVulkan_InitInfo init_info = {};
     init_info.Instance = instance_;
@@ -1828,10 +1822,43 @@ void Application::SetupImgui()
     init_info.ImageCount = image_count_;
     init_info.CheckVkResultFn = check_vk_result;
     ImGui_ImplVulkan_Init(&init_info, imgui_render_pass_);
+    ResizeImGui();
+}
+
+void Application::CreateImGuiFramebuffers()
+{
+    imgui_frame_buffers_.resize(image_count_);
+    for (uint32_t i = 0; i < image_count_; ++i) {
+        vk::FramebufferCreateInfo info(
+            vk::FramebufferCreateFlags(), imgui_render_pass_,
+            swap_chain_image_views_[i], swap_chain_extent_.width,
+            swap_chain_extent_.height, 1);
+        imgui_frame_buffers_[i] = logical_device_.createFramebuffer(info);
+    }
+}
+
+void Application::CreateImGuiCommandBuffers()
+{
+    vk::CommandBufferAllocateInfo command_buffer_info(
+        imgui_command_pool_, vk::CommandBufferLevel::ePrimary, image_count_);
+    imgui_command_buffers_ =
+        logical_device_.allocateCommandBuffers(command_buffer_info);
+}
+
+void Application::ResizeImGui()
+{
+    ImGuiIO& io = ImGui::GetIO();
+    io.Fonts->Clear();
+    io.Fonts->AddFontFromFileTTF(
+        "/usr/share/fonts/TTF/FiraCode-Regular.ttf",
+        std::floor(window_scaling_ * 13.0f));
 
     auto command_buffer = BeginSingleTimeCommands();
     ImGui_ImplVulkan_CreateFontsTexture(command_buffer);
     EndSingleTimeCommands(command_buffer);
+
+    ImGui::StyleColorsDark(&imgui_style_);
+    imgui_style_.ScaleAllSizes(window_scaling_);
 }
 
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE

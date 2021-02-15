@@ -14,6 +14,8 @@
 #define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
 #include <vulkan/vulkan.hpp>
 
+#include "imgui.h"
+
 struct QueueFamilyInfo {
     uint32_t index;
     vk::QueueFamilyProperties properties;
@@ -59,6 +61,7 @@ class Application
     void Run();
 
     void SetFramebufferResized();
+    void SetRenderScaling(float scale);
 
    private:
     void InitWindow();
@@ -141,6 +144,9 @@ class Application
                          uint32_t mip_levels);
     vk::SampleCountFlagBits GetMaxUsableSampleCount();
     void CreateColorResources();
+    void CreateImGuiFramebuffers();
+    void CreateImGuiCommandBuffers();
+    void ResizeImGui();
 
     GLFWwindow* window_;
     vk::Instance instance_;
@@ -207,7 +213,10 @@ class Application
     std::vector<vk::CommandBuffer> imgui_command_buffers_;
     std::vector<vk::Framebuffer> imgui_frame_buffers_;
 
+    ImGuiStyle imgui_style_;
+
     size_t current_frame_ = 0;
     bool framebuffer_resized_ = false;
+    float window_scaling_ = 1.0f;
     vk::DebugUtilsMessengerEXT debug_messenger_;
 };
