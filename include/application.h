@@ -144,6 +144,7 @@ class Application
                          uint32_t mip_levels);
     vk::SampleCountFlagBits GetMaxUsableSampleCount();
     void CreateColorResources();
+    void FindFontFile(std::string name);
     void CreateImGuiFramebuffers();
     void CreateImGuiCommandBuffers();
     void ResizeImGui();
@@ -214,6 +215,7 @@ class Application
     std::vector<vk::CommandBuffer> imgui_command_buffers_;
     std::vector<vk::Framebuffer> imgui_frame_buffers_;
 
+    std::string font_file_;
     ImGuiStyle imgui_style_;
 
     size_t current_frame_ = 0;

@@ -13,6 +13,8 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/hash.hpp>
 
+#include <fontconfig/fontconfig.h>
+
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_vulkan.h"
 #include "imgui.h"
@@ -1045,6 +1047,35 @@ void Application::DrawFrame()
     {
         ImGui::Text("%u vertices", vertex_count_);
         ImGui::Text("%u triangles", tri_count_);
+        ImGui::Text("Framebuffer Size: %ux%u", swap_chain_extent_.width, swap_chain_extent_.height);
+        uint32_t msaa_sample_count = 1;
+        switch (msaa_samples_) {
+            case vk::SampleCountFlagBits::e64:
+                msaa_sample_count = 64;
+                break;
+            case vk::SampleCountFlagBits::e32:
+                msaa_sample_count = 32;
+                break;
+            case vk::SampleCountFlagBits::e16:
+                msaa_sample_count = 16;
+                break;
+            case vk::SampleCountFlagBits::e8:
+                msaa_sample_count = 8;
+                break;
+            case vk::SampleCountFlagBits::e4:
+                msaa_sample_count = 4;
+                break;
+            case vk::SampleCountFlagBits::e2:
+                msaa_sample_count = 2;
+                break;
+            case vk::SampleCountFlagBits::e1:
+                msaa_sample_count = 1;
+                break;
+            default:
+                msaa_sample_count = 1;
+                break;
+        }
+        ImGui::Text("MSAA Sample Count: %u", msaa_sample_count);
         ImGui::Text("%.02f FPS", frames_per_second_);
         ImGui::DragFloat("Rotation Rate", &rotation_rate_, 0.1f, -60.0f, 60.0f, "%.02f RPM", ImGuiSliderFlags_None);
     }
@@ -1737,6 +1768,34 @@ void Application::CreateColorResources()
                                         vk::ImageAspectFlagBits::eColor, 1);
 }
 
+void Application::FindFontFile(std::string name)
+{
+    FcConfig* config = FcInitLoadConfigAndFonts();
+
+    // configure the search pattern, 
+    // assume "name" is a std::string with the desired font name in it
+    FcPattern* pat = FcNameParse((const FcChar8*)(name.c_str()));
+    FcConfigSubstitute(config, pat, FcMatchPattern);
+    FcDefaultSubstitute(pat);
+
+    // find the font
+    FcResult res;
+    FcPattern* font = FcFontMatch(config, pat, &res);
+    if (font)
+    {
+        FcChar8* file = NULL;
+        if (FcPatternGetString(font, FC_FILE, 0, &file) == FcResultMatch)
+        {
+            // save the file to another std::string
+            font_file_ = (char*)file;
+        }
+        FcPatternDestroy(font);
+    }
+
+    FcPatternDestroy(pat);
+    FcConfigDestroy(config);
+}
+
 static void check_vk_result(VkResult err)
 {
     if (err == 0) return;
@@ -1746,6 +1805,10 @@ static void check_vk_result(VkResult err)
 
 void Application::SetupImgui()
 {
+    // Find the font first
+    FindFontFile("Fira Code");
+    assert(font_file_.size() > 0);
+
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
@@ -1858,7 +1921,7 @@ void Application::ResizeImGui()
     ImGuiIO& io = ImGui::GetIO();
     io.Fonts->Clear();
     io.Fonts->AddFontFromFileTTF(
-        "/usr/share/fonts/truetype/firacode/FiraCode-Regular.ttf",
+        font_file_.c_str(),
         std::floor(window_scaling_ * 13.0f));
 
     auto command_buffer = BeginSingleTimeCommands();

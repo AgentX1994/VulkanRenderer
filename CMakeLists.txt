@@ -8,6 +8,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 find_package(Vulkan REQUIRED)
 find_package(glfw3 REQUIRED)
 find_package(glm REQUIRED)
+find_package(Fontconfig REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(Shaderc REQUIRED IMPORTED_TARGET shaderc)
 
@@ -30,6 +31,7 @@ PUBLIC
   Imgui::Imgui
   Vulkan::Vulkan
   glfw
+  Fontconfig::Fontconfig
   PkgConfig::Shaderc
   ${CMAKE_DL_LIBS})
 
