@@ -11,7 +11,6 @@
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtx/hash.hpp>
 
 #include <fontconfig/fontconfig.h>
 
@@ -25,45 +24,10 @@
 constexpr uint32_t WIDTH = 800;
 constexpr uint32_t HEIGHT = 600;
 
-const std::string MODEL_PATH = "models/viking_room.obj";
-const std::string TEXTURE_PATH = "textures/viking_room.png";
-
-vk::VertexInputBindingDescription Vertex::GetBindingDescription()
-{
-    return vk::VertexInputBindingDescription(0, sizeof(Vertex),
-                                             vk::VertexInputRate::eVertex);
-}
-
-std::array<vk::VertexInputAttributeDescription, 3>
-Vertex::GetAttributeDescriptions()
-{
-    return {vk::VertexInputAttributeDescription(
-                0, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, pos)),
-            vk::VertexInputAttributeDescription(
-                1, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, color)),
-            vk::VertexInputAttributeDescription(2, 0, vk::Format::eR32G32Sfloat,
-                                                offsetof(Vertex, tex_coord))};
-}
-
-bool Vertex::operator==(const Vertex& other) const
-{
-    return pos == other.pos && color == other.color &&
-           tex_coord == other.tex_coord;
-}
-
-namespace std {
-template <>
-struct hash<Vertex>
-{
-    size_t operator()(const Vertex& vertex) const
-    {
-        return ((hash<glm::vec3>()(vertex.pos) ^
-                 (hash<glm::vec3>()(vertex.color) << 1)) >>
-                1) ^
-               (hash<glm::vec2>()(vertex.tex_coord) << 1);
-    }
+const std::vector<std::string> MODEL_PATHS = {
+    "models/viking_room.obj"
 };
-}  // namespace std
+const std::string TEXTURE_PATH = "textures/viking_room.png";
 
 struct UniformBufferObject
 {
@@ -77,40 +41,6 @@ const std::vector<const char*> DEVICE_EXTENSIONS = {
 
 const std::vector<const char*> VALIDATION_LAYERS = {
     "VK_LAYER_KHRONOS_validation"};
-
-// const std::vector<Vertex> TRIANGLE = {
-//     { { 0.0f, -0.5f }, { 1.0f, 1.0f, 1.0f } },
-//     { { 0.5f, 0.5f }, { 0.0f, 1.0f, 0.0f } },
-//     { { -0.5f, 0.5f }, { 0.0f, 0.0f, 1.0f } }
-// };
-
-// const std::vector<Vertex> SQUARE_VERTICES = {
-//     { { -0.5f, -0.5f, 0.0f }, { 1.0f, 0.0f, 0.0f }, { 1.0f, 0.0f } },
-//     { { 0.5f, -0.5f, 0.0f }, { 0.0f, 1.0f, 0.0f }, { 0.0f, 0.0f } },
-//     { { 0.5f, 0.5f, 0.0f }, { 0.0f, 0.0f, 1.0f }, { 0.0f, 1.0f } },
-//     { { -0.5f, 0.5f, 0.0f }, { 1.0f, 1.0f, 1.0f }, { 1.0f, 1.0f } }
-// };
-
-// const std::vector<uint16_t> SQUARE_INDICES = {
-//     0, 1, 2, 2, 3, 0
-// };
-
-// const std::vector<Vertex> TWO_SQUARES_VERTICES = {
-//     { { -0.5f, -0.5f, 0.0f }, { 1.0f, 0.0f, 0.0f }, { 1.0f, 0.0f } },
-//     { { 0.5f, -0.5f, 0.0f }, { 0.0f, 1.0f, 0.0f }, { 0.0f, 0.0f } },
-//     { { 0.5f, 0.5f, 0.0f }, { 0.0f, 0.0f, 1.0f }, { 0.0f, 1.0f } },
-//     { { -0.5f, 0.5f, 0.0f }, { 1.0f, 1.0f, 1.0f }, { 1.0f, 1.0f } },
-
-//     { { -0.5f, -0.5f, -0.5f }, { 1.0f, 0.0f, 0.0f }, { 1.0f, 0.0f } },
-//     { { 0.5f, -0.5f, -0.5f }, { 0.0f, 1.0f, 0.0f }, { 0.0f, 0.0f } },
-//     { { 0.5f, 0.5f, -0.5f }, { 0.0f, 0.0f, 1.0f }, { 0.0f, 1.0f } },
-//     { { -0.5f, 0.5f, -0.5f }, { 1.0f, 1.0f, 1.0f }, { 1.0f, 1.0f } }
-// };
-
-// const std::vector<uint16_t> TWO_SQUARES_INDICES = {
-//     0, 1, 2, 2, 3, 0,
-//     4, 5, 6, 6, 7, 4
-// };
 
 #ifndef NDEBUG
 constexpr bool ENABLE_VALIDATION_LAYERS = true;
@@ -197,8 +127,6 @@ void Application::InitVulkan()
     CreateTextureImageView();
     CreateTextureSampler();
     LoadModel();
-    CreateVertexBuffer();
-    CreateIndexBuffer();
     CreateUniformBuffers();
     CreateDescriptorPool();
     CreateDescriptorSets();
@@ -224,6 +152,7 @@ void Application::MainLoop()
 
 void Application::Cleanup()
 {
+    models_.clear();
     ImGui_ImplVulkan_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
@@ -240,12 +169,6 @@ void Application::Cleanup()
     logical_device_.freeMemory(texture_image_memory_);
 
     logical_device_.destroyDescriptorSetLayout(descriptor_set_layout_);
-
-    logical_device_.destroyBuffer(index_buffer_);
-    logical_device_.freeMemory(index_buffer_memory_);
-
-    logical_device_.destroyBuffer(vertex_buffer_);
-    logical_device_.freeMemory(vertex_buffer_memory_);
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
         logical_device_.destroySemaphore(render_finished_semaphore_[i]);
@@ -871,58 +794,6 @@ std::pair<vk::Buffer, vk::DeviceMemory> Application::CreateBuffer(
     return {buffer, memory};
 }
 
-void Application::CreateVertexBuffer()
-{
-    vk::DeviceSize buffer_size = sizeof(vertices_[0]) * vertices_.size();
-
-    auto [staging_buffer, staging_buffer_memory] =
-        CreateBuffer(buffer_size, vk::BufferUsageFlagBits::eTransferSrc,
-                     vk::MemoryPropertyFlagBits::eHostVisible |
-                         vk::MemoryPropertyFlagBits::eHostCoherent);
-
-    void* data =
-        logical_device_.mapMemory(staging_buffer_memory, 0, buffer_size);
-    memcpy(data, vertices_.data(), (size_t)buffer_size);
-    logical_device_.unmapMemory(staging_buffer_memory);
-
-    std::tie(vertex_buffer_, vertex_buffer_memory_) =
-        CreateBuffer(buffer_size,
-                     vk::BufferUsageFlagBits::eTransferDst |
-                         vk::BufferUsageFlagBits::eVertexBuffer,
-                     vk::MemoryPropertyFlagBits::eDeviceLocal);
-
-    CopyBuffer(staging_buffer, vertex_buffer_, buffer_size);
-
-    logical_device_.destroyBuffer(staging_buffer);
-    logical_device_.freeMemory(staging_buffer_memory);
-}
-
-void Application::CreateIndexBuffer()
-{
-    vk::DeviceSize buffer_size = sizeof(indices_[0]) * indices_.size();
-
-    auto [staging_buffer, staging_buffer_memory] =
-        CreateBuffer(buffer_size, vk::BufferUsageFlagBits::eTransferSrc,
-                     vk::MemoryPropertyFlagBits::eHostVisible |
-                         vk::MemoryPropertyFlagBits::eHostCoherent);
-
-    void* data =
-        logical_device_.mapMemory(staging_buffer_memory, 0, buffer_size);
-    memcpy(data, indices_.data(), (size_t)buffer_size);
-    logical_device_.unmapMemory(staging_buffer_memory);
-
-    std::tie(index_buffer_, index_buffer_memory_) =
-        CreateBuffer(buffer_size,
-                     vk::BufferUsageFlagBits::eTransferDst |
-                         vk::BufferUsageFlagBits::eIndexBuffer,
-                     vk::MemoryPropertyFlagBits::eDeviceLocal);
-
-    CopyBuffer(staging_buffer, index_buffer_, buffer_size);
-
-    logical_device_.destroyBuffer(staging_buffer);
-    logical_device_.freeMemory(staging_buffer_memory);
-}
-
 void Application::CreateCommandBuffers()
 {
     vk::CommandBufferAllocateInfo alloc_info(command_pool_,
@@ -952,14 +823,14 @@ void Application::CreateCommandBuffers()
         command_buffers_[i].bindPipeline(vk::PipelineBindPoint::eGraphics,
                                          graphics_pipeline_);
 
-        command_buffers_[i].bindVertexBuffers(0, vertex_buffer_, {0});
-        command_buffers_[i].bindIndexBuffer(index_buffer_, 0,
-                                            vk::IndexType::eUint32);
         command_buffers_[i].bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
                                                pipeline_layout_, 0,
                                                descriptor_sets_[i], {});
-        command_buffers_[i].drawIndexed(static_cast<uint32_t>(indices_.size()),
-                                        1, 0, 0, 0);
+        
+        for (auto& model : models_) 
+        {
+            model.RecordDrawCommand(command_buffers_[i]);
+        }
 
         command_buffers_[i].endRenderPass();
         command_buffers_[i].end();
@@ -1599,47 +1470,10 @@ void Application::CreateDepthResources()
 
 void Application::LoadModel()
 {
-    tinyobj::attrib_t attrib;
-    std::vector<tinyobj::shape_t> shapes;
-    std::vector<tinyobj::material_t> materials;
-    std::string warn, err;
-
-    if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err,
-                          MODEL_PATH.c_str())) {
-        throw std::runtime_error(warn + err);
+    for (const auto& path : MODEL_PATHS)
+    {
+        models_.push_back(Model(physical_device_, logical_device_, command_pool_, graphics_queue_, path));
     }
-
-    std::unordered_map<Vertex, uint32_t> unique_vertices;
-
-    for (const auto& shape : shapes) {
-        for (const auto& index : shape.mesh.indices) {
-            // Currently assuming that every vertex is unique
-            // TODO: Fix this
-            Vertex vertex{};
-
-            vertex.pos = {attrib.vertices[3 * index.vertex_index + 0],
-                          attrib.vertices[3 * index.vertex_index + 1],
-                          attrib.vertices[3 * index.vertex_index + 2]};
-
-            vertex.tex_coord = {
-                attrib.texcoords[2 * index.texcoord_index + 0],
-                // the loader loads top to bottom, but Vulkan is bottom to top
-                1.0f - attrib.texcoords[2 * index.texcoord_index + 1]};
-
-            vertex.color = {1.0f, 1.0f, 1.0f};
-
-            if (unique_vertices.count(vertex) == 0) {
-                unique_vertices[vertex] =
-                    static_cast<uint32_t>(vertices_.size());
-                vertices_.push_back(vertex);
-            }
-
-            indices_.push_back(unique_vertices[vertex]);
-        }
-    }
-
-    vertex_count_ = vertices_.size();
-    tri_count_ = indices_.size() / 3;
 }
 
 void Application::GenerateMipMaps(vk::Image image, vk::Format format,

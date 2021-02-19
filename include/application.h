@@ -15,8 +15,11 @@
 #include <vulkan/vulkan.hpp>
 
 #include "imgui.h"
+#include "vertex.h"
+#include "model.h"
 
-struct QueueFamilyInfo {
+struct QueueFamilyInfo
+{
     uint32_t index;
     vk::QueueFamilyProperties properties;
 };
@@ -41,29 +44,15 @@ struct SwapChainSupportDetails
 
 constexpr size_t MAX_FRAMES_IN_FLIGHT = 2;
 
-// Forward declare Vertex struct
-
-struct Vertex
-{
-    glm::vec3 pos;
-    glm::vec3 color;
-    glm::vec2 tex_coord;
-
-    static vk::VertexInputBindingDescription GetBindingDescription();
-    static std::array<vk::VertexInputAttributeDescription, 3>
-    GetAttributeDescriptions();
-    bool operator==(const Vertex& other) const;
-};
-
 class Application
 {
-   public:
+public:
     void Run();
 
     void SetFramebufferResized();
     void SetRenderScaling(float scale);
 
-   private:
+private:
     void InitWindow();
     void InitVulkan();
     void SetupImgui();
@@ -101,8 +90,6 @@ class Application
     std::pair<vk::Buffer, vk::DeviceMemory> CreateBuffer(
         vk::DeviceSize size, vk::BufferUsageFlags usage,
         vk::MemoryPropertyFlags properties);
-    void CreateVertexBuffer();
-    void CreateIndexBuffer();
     void CreateCommandBuffers();
     void CreateSyncObjects();
     void CleanupSwapChain();
@@ -176,11 +163,7 @@ class Application
     std::vector<Vertex> vertices_;
     std::vector<uint32_t> indices_;
 
-    vk::Buffer vertex_buffer_;
-    vk::DeviceMemory vertex_buffer_memory_;
-
-    vk::Buffer index_buffer_;
-    vk::DeviceMemory index_buffer_memory_;
+    std::vector<Model> models_;
 
     std::vector<vk::Buffer> uniform_buffers_;
     std::vector<vk::DeviceMemory> uniform_buffers_memory_;

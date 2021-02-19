@@ -18,6 +18,10 @@ add_executable(VulkanTest
   src/main.cpp
   src/application.cpp
   src/utils.cpp
+  src/vertex.cpp
+  src/mesh.cpp
+  src/model.cpp
+  src/gpu_buffer.cpp
   src/stb_image.cpp
   src/tiny_obj_loader.cpp)
 target_include_directories(VulkanTest
