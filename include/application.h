@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <optional>
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -17,6 +18,7 @@
 #include "imgui.h"
 #include "vertex.h"
 #include "model.h"
+#include "texture.h"
 
 struct QueueFamilyInfo
 {
@@ -117,7 +119,6 @@ private:
                                vk::ImageLayout new_layout, uint32_t mip_levels);
     void CopyBufferToImage(vk::Buffer buffer, vk::Image image, uint32_t width,
                            uint32_t height);
-    void CreateTextureImageView();
     void CreateTextureSampler();
     vk::Format FindSupportedFormat(const std::vector<vk::Format>& candidates,
                                    vk::ImageTiling tiling,
@@ -173,9 +174,7 @@ private:
     vk::ImageView color_image_view_;
 
     uint32_t mip_levels_;
-    vk::Image texture_image_;
-    vk::DeviceMemory texture_image_memory_;
-    vk::ImageView texture_image_view_;
+    std::optional<Texture> texture_image_;
     vk::Sampler texture_sampler_;
 
     vk::Image depth_image_;
@@ -207,7 +206,5 @@ private:
     float window_scaling_ = 1.0f;
     float rotation_rate_ = 1.0f;
     float current_model_rotation_degrees_ = 0.0f;
-    uint32_t vertex_count_;
-    uint32_t tri_count_;
     vk::DebugUtilsMessengerEXT debug_messenger_;
 };

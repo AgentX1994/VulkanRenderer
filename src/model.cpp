@@ -44,3 +44,24 @@ void Model::RecordDrawCommand(vk::CommandBuffer& command_buffer)
         mesh.RecordDrawCommand(command_buffer);
     }
 }
+
+uint32_t Model::GetVertexCount()
+{
+    uint32_t count = 0;
+    for (auto& mesh : meshes_) {
+        count += mesh.GetVertexCount();
+    }
+
+    return count;
+}
+
+uint32_t Model::GetTriangleCount()
+{
+    uint32_t count = 0;
+    for (auto& mesh : meshes_) {
+        count += mesh.GetTriangleCount();
+ 
+    }
+
+    return count;
+}

@@ -71,5 +71,8 @@
         "typeinfo": "cpp",
         "valarray": "cpp"
     },
-    "glsllint.glslangValidatorArgs": "--target-env vulkan1.2"
+    "glsllint.glslangValidatorArgs": "--target-env vulkan1.2",
+    "cmake.configureSettings": {
+        "FORCE_COLORED_OUTPUT": "ON"
+    }
 }

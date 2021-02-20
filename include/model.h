@@ -16,6 +16,9 @@ public:
 
     void RecordDrawCommand(vk::CommandBuffer& command_buffer);
 
+    uint32_t GetVertexCount();
+    uint32_t GetTriangleCount();
+
 private:
     std::vector<Mesh> meshes_;
     std::vector<tinyobj::material_t> materials_;

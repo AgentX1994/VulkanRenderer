@@ -124,7 +124,6 @@ void Application::InitVulkan()
     CreateGraphicsPipeline();
     CreateFramebuffers();
     CreateTextureImage();
-    CreateTextureImageView();
     CreateTextureSampler();
     LoadModel();
     CreateUniformBuffers();
@@ -163,10 +162,8 @@ void Application::Cleanup()
     logical_device_.destroyRenderPass(imgui_render_pass_);
     logical_device_.destroyDescriptorPool(imgui_descriptor_pool_);
 
+    texture_image_.reset();
     logical_device_.destroySampler(texture_sampler_);
-    logical_device_.destroyImageView(texture_image_view_);
-    logical_device_.destroyImage(texture_image_);
-    logical_device_.freeMemory(texture_image_memory_);
 
     logical_device_.destroyDescriptorSetLayout(descriptor_set_layout_);
 
@@ -916,8 +913,14 @@ void Application::DrawFrame()
     ImGui::NewFrame();
     if (ImGui::Begin("Stats", &imgui_display_))
     {
-        ImGui::Text("%u vertices", vertex_count_);
-        ImGui::Text("%u triangles", tri_count_);
+        uint32_t vertex_count = 0;
+        uint32_t tri_count = 0;
+        for (auto& model : models_) {
+            vertex_count += model.GetVertexCount();
+            tri_count += model.GetTriangleCount();
+        }
+        ImGui::Text("%u vertices", vertex_count);
+        ImGui::Text("%u triangles", tri_count);
         ImGui::Text("Framebuffer Size: %ux%u", swap_chain_extent_.width, swap_chain_extent_.height);
         uint32_t msaa_sample_count = 1;
         switch (msaa_samples_) {
@@ -1189,7 +1192,7 @@ void Application::CreateDescriptorSets()
                                              sizeof(UniformBufferObject));
 
         vk::DescriptorImageInfo image_info(
-            texture_sampler_, texture_image_view_,
+            texture_sampler_, texture_image_->GetImageView(),
             vk::ImageLayout::eShaderReadOnlyOptimal);
 
         std::array<vk::WriteDescriptorSet, 2> descriptor_writes = {
@@ -1235,57 +1238,9 @@ std::pair<vk::Image, vk::DeviceMemory> Application::CreateImage(
 
 void Application::CreateTextureImage()
 {
-    int texture_width, texture_height, texture_channels;
-    stbi_uc* pixels =
-        stbi_load(TEXTURE_PATH.c_str(), &texture_width, &texture_height,
-                  &texture_channels, STBI_rgb_alpha);
-    vk::DeviceSize image_size = texture_width * texture_height * 4;
-
-    if (!pixels) {
-        throw std::runtime_error("failed to load texture image");
-    }
-
-    mip_levels_ = static_cast<uint32_t>(std::floor(
-                      std::log2(std::max(texture_width, texture_height)))) +
-                  1;
-
-    auto [staging_buffer, staging_buffer_memory] =
-        CreateBuffer(image_size, vk::BufferUsageFlagBits::eTransferSrc,
-                     vk::MemoryPropertyFlagBits::eHostVisible |
-                         vk::MemoryPropertyFlagBits::eHostCoherent);
-
-    void* data =
-        logical_device_.mapMemory(staging_buffer_memory, 0, image_size);
-    memcpy(data, pixels, static_cast<size_t>(image_size));
-    logical_device_.unmapMemory(staging_buffer_memory);
-
-    stbi_image_free(pixels);
-
-    std::tie(texture_image_, texture_image_memory_) = CreateImage(
-        texture_width, texture_height, mip_levels_, vk::SampleCountFlagBits::e1,
-        vk::Format::eR8G8B8A8Srgb, vk::ImageTiling::eOptimal,
-        vk::ImageUsageFlagBits::eTransferSrc |
-            vk::ImageUsageFlagBits::eTransferDst |
-            vk::ImageUsageFlagBits::eSampled,
-        vk::MemoryPropertyFlagBits::eDeviceLocal);
-
-    TransitionImageLayout(texture_image_, vk::Format::eR8G8B8A8Srgb,
-                          vk::ImageLayout::eUndefined,
-                          vk::ImageLayout::eTransferDstOptimal, mip_levels_);
-
-    CopyBufferToImage(staging_buffer, texture_image_, texture_width,
-                      texture_height);
-
-    // will transition while generating mipmaps
-    //   TransitionImageLayout(texture_image_, vk::Format::eR8G8B8A8Srgb,
-    //                         vk::ImageLayout::eTransferDstOptimal,
-    //                         vk::ImageLayout::eShaderReadOnlyOptimal,
-    //                         mip_levels_);
-    GenerateMipMaps(texture_image_, vk::Format::eR8G8B8A8Srgb, texture_width,
-                    texture_height, mip_levels_);
-
-    logical_device_.destroyBuffer(staging_buffer);
-    logical_device_.freeMemory(staging_buffer_memory);
+    texture_image_.emplace(
+        physical_device_, logical_device_, command_pool_, graphics_queue_, TEXTURE_PATH
+    );
 }
 
 vk::CommandBuffer Application::BeginSingleTimeCommands()
@@ -1387,13 +1342,6 @@ void Application::CopyBufferToImage(vk::Buffer buffer, vk::Image image,
         buffer, image, vk::ImageLayout::eTransferDstOptimal, region);
 
     EndSingleTimeCommands(command_buffer);
-}
-
-void Application::CreateTextureImageView()
-{
-    texture_image_view_ =
-        CreateImageView(texture_image_, vk::Format::eR8G8B8A8Srgb,
-                        vk::ImageAspectFlagBits::eColor, mip_levels_);
 }
 
 void Application::CreateTextureSampler()

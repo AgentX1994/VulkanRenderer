@@ -18,6 +18,9 @@ public:
 
     void RecordDrawCommand(vk::CommandBuffer& command_buffer);
 
+    uint32_t GetVertexCount();
+    uint32_t GetTriangleCount();
+
 private:
     std::string name_;
 

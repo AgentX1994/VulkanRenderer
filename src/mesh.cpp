@@ -68,3 +68,13 @@ void Mesh::RecordDrawCommand(vk::CommandBuffer& command_buffer)
                                    vk::IndexType::eUint32);
     command_buffer.drawIndexed(tri_count_ * 3u, 1, 0, 0, 0);
 }
+
+uint32_t Mesh::GetVertexCount()
+{
+    return vertex_count_;
+}
+
+uint32_t Mesh::GetTriangleCount()
+{
+    return tri_count_;
+}

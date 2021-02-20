@@ -3,6 +3,15 @@ project(VulkanRenderer)
 
 set(CMAKE_CXX_STANDARD 17)
 
+option (FORCE_COLORED_OUTPUT "Always produce ANSI-colored output (GNU/Clang only)." OFF)
+if (${FORCE_COLORED_OUTPUT})
+  if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
+    add_compile_options (-fdiagnostics-color=always)
+  elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
+    add_compile_options (-fcolor-diagnostics)
+  endif ()
+endif ()
+
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 
 find_package(Vulkan REQUIRED)
@@ -21,7 +30,10 @@ add_executable(VulkanTest
   src/vertex.cpp
   src/mesh.cpp
   src/model.cpp
+  src/texture.cpp
+  src/texture_cache.cpp
   src/gpu_buffer.cpp
+  src/gpu_image.cpp
   src/stb_image.cpp
   src/tiny_obj_loader.cpp)
 target_include_directories(VulkanTest
@@ -75,6 +87,14 @@ add_custom_target(
   COMMENT "Copying models" VERBATIM
 )
 
+add_custom_target(
+  copy_material_files
+  COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${CMAKE_SOURCE_DIR}/materials ${CMAKE_CURRENT_BINARY_DIR}/materials
+  COMMENT "Copying materials" VERBATIM
+)
+
 add_dependencies(VulkanTest copy_shader_files)
 add_dependencies(VulkanTest copy_texture_files)
 add_dependencies(VulkanTest copy_model_files)
+add_dependencies(VulkanTest copy_material_files)
