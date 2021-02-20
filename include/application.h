@@ -61,18 +61,10 @@ private:
     void MainLoop();
     void Cleanup();
 
-    void CreateInstance();
-    bool CheckValidationLayerSupport();
-    std::vector<const char*> GetRequiredExtensions();
+    void CreateRenderer();
     void SetupDebugMessenger();
-    QueueFamilyIndices FindQueueFamilies(const vk::PhysicalDevice& device);
-    bool CheckDeviceExtensionSupport(const vk::PhysicalDevice& device);
-    SwapChainSupportDetails QuerySwapChainSupport(
-        const vk::PhysicalDevice& device);
-    bool IsDeviceSuitable(const vk::PhysicalDevice& device);
-    void PickPhysicalDevice();
-    void CreateLogicalDevice();
-    void CreateSurface();
+    
+    std::vector<const char*> GetRequiredExtensions();
     vk::SurfaceFormatKHR ChooseSwapSurfaceFormat(
         const std::vector<vk::SurfaceFormatKHR>& available_formats);
     vk::PresentModeKHR ChooseSwapPresentMode(
@@ -88,10 +80,6 @@ private:
     void CreateGraphicsPipeline();
     vk::ShaderModule CreateShaderModule(const std::vector<uint32_t>& code);
     void CreateFramebuffers();
-    void CreateCommandPool();
-    std::pair<vk::Buffer, vk::DeviceMemory> CreateBuffer(
-        vk::DeviceSize size, vk::BufferUsageFlags usage,
-        vk::MemoryPropertyFlags properties);
     void CreateCommandBuffers();
     void CreateSyncObjects();
     void CleanupSwapChain();
@@ -99,8 +87,6 @@ private:
     void DrawFrame();
     uint32_t FindMemoryType(uint32_t type_filter,
                             vk::MemoryPropertyFlags properties);
-    void CopyBuffer(vk::Buffer source, vk::Buffer destination,
-                    vk::DeviceSize size);
     void CreateDescriptorSetLayout();
     void CreateUniformBuffers();
     void UpdateUniformBuffer(uint32_t index);
@@ -117,8 +103,6 @@ private:
     void TransitionImageLayout(vk::Image image, vk::Format format,
                                vk::ImageLayout old_layout,
                                vk::ImageLayout new_layout, uint32_t mip_levels);
-    void CopyBufferToImage(vk::Buffer buffer, vk::Image image, uint32_t width,
-                           uint32_t height);
     void CreateTextureSampler();
     vk::Format FindSupportedFormat(const std::vector<vk::Format>& candidates,
                                    vk::ImageTiling tiling,
@@ -139,12 +123,7 @@ private:
     void Update(float delta_time);
 
     GLFWwindow* window_;
-    vk::Instance instance_;
-    vk::PhysicalDevice physical_device_;
-    vk::Device logical_device_;
-    vk::Queue graphics_queue_;
-    vk::Queue present_queue_;
-    vk::SurfaceKHR surface_;
+    std::optional<RendererState> renderer_;
     vk::SwapchainKHR swapchain_;
     uint32_t min_image_count_;
     uint32_t image_count_;
@@ -157,17 +136,12 @@ private:
     vk::DescriptorSetLayout descriptor_set_layout_;
     vk::PipelineLayout pipeline_layout_;
     std::vector<vk::Framebuffer> swap_chain_frame_buffers_;
-    vk::CommandPool command_pool_;
     vk::DescriptorPool descriptor_pool_;
     std::vector<vk::DescriptorSet> descriptor_sets_;
 
-    std::vector<Vertex> vertices_;
-    std::vector<uint32_t> indices_;
-
     std::vector<Model> models_;
 
-    std::vector<vk::Buffer> uniform_buffers_;
-    std::vector<vk::DeviceMemory> uniform_buffers_memory_;
+    std::vector<GpuBuffer> uniform_buffers_;
 
     vk::Image color_image_;
     vk::DeviceMemory color_image_memory_;
@@ -180,8 +154,6 @@ private:
     vk::Image depth_image_;
     vk::DeviceMemory depth_image_memory_;
     vk::ImageView depth_image_view_;
-
-    vk::SampleCountFlagBits msaa_samples_ = vk::SampleCountFlagBits::e1;
 
     std::vector<vk::CommandBuffer> command_buffers_;
 

@@ -2,6 +2,8 @@
 
 #include <string>
 #include <vector>
+
+#define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
 #include <vulkan/vulkan.hpp>
 
 #include "mesh.h"
@@ -10,8 +12,7 @@
 class Model
 {
 public:
-    Model(vk::PhysicalDevice& physical_device, vk::Device& device,
-          vk::CommandPool& transient_command_pool, vk::Queue& queue,
+    Model(RendererState& renderer,
           std::string path);
 
     void RecordDrawCommand(vk::CommandBuffer& command_buffer);

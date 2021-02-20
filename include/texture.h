@@ -3,11 +3,12 @@
 #include "gpu_image.h"
 #include "stb_image.h"
 
+class RendererState;
+
 class Texture
 {
 public:
-    Texture(vk::PhysicalDevice& physical_device, vk::Device& device,
-            vk::CommandPool& transient_command_pool, vk::Queue& queue,
+    Texture(RendererState& renderer,
             std::string texture_path);
 
     Texture(const Texture&) = delete;

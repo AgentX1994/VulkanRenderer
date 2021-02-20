@@ -2,11 +2,10 @@
 
 #include <unordered_map>
 
-Mesh::Mesh(vk::PhysicalDevice& physical_device, vk::Device& device,
-           vk::CommandPool& transient_command_pool, vk::Queue& queue,
+Mesh::Mesh(RendererState& renderer,
            const tinyobj::attrib_t attribs, const tinyobj::shape_t& shape)
-    : gpu_vertices_(device),
-      gpu_indices_(device),
+    : gpu_vertices_(renderer.GetDevice()),
+      gpu_indices_(renderer.GetDevice()),
       name_(shape.name),
       material_indices_(shape.mesh.material_ids)
 {
@@ -41,12 +40,11 @@ Mesh::Mesh(vk::PhysicalDevice& physical_device, vk::Device& device,
     vertex_count_ = vertices.size();
     tri_count_ = indices.size() / 3;
 
-    gpu_vertices_.SetData(physical_device, device, transient_command_pool,
-                          queue, vertices,
+    gpu_vertices_.SetData(renderer, vertices,
                           vk::BufferUsageFlagBits::eTransferDst |
                               vk::BufferUsageFlagBits::eVertexBuffer,
                           vk::MemoryPropertyFlagBits::eDeviceLocal);
-    gpu_indices_.SetData(physical_device, device, transient_command_pool, queue,
+    gpu_indices_.SetData(renderer,
                          indices,
                          vk::BufferUsageFlagBits::eTransferDst |
                              vk::BufferUsageFlagBits::eIndexBuffer,

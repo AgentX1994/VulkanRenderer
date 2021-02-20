@@ -32,6 +32,7 @@ add_executable(VulkanTest
   src/model.cpp
   src/texture.cpp
   src/texture_cache.cpp
+  src/renderer_state.cpp
   src/gpu_buffer.cpp
   src/gpu_image.cpp
   src/stb_image.cpp

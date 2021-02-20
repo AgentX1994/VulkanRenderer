@@ -4,7 +4,11 @@
 #include <cerrno>
 #include <fstream>
 #include <iostream>
+
+#define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
 #include <vulkan/vulkan.hpp>
+
+#include "renderer_state.h"
 
 std::string GetFileContents(const char* filename)
 {
@@ -96,10 +100,12 @@ uint32_t FindMemoryType(vk::PhysicalDevice& physical_device,
 }
 
 std::pair<vk::Buffer, vk::DeviceMemory> CreateBuffer(
-    vk::Device& device, vk::PhysicalDevice& physical_device,
-    vk::DeviceSize size, vk::BufferUsageFlags usage,
+    RendererState& renderer, vk::DeviceSize size, vk::BufferUsageFlags usage,
     vk::MemoryPropertyFlags properties)
 {
+    auto device = renderer.GetDevice();
+    auto physical_device = renderer.GetPhysicalDevice();
+
     vk::BufferCreateInfo buffer_info(vk::BufferCreateFlags(), size, usage,
                                      vk::SharingMode::eExclusive);
 
@@ -118,11 +124,14 @@ std::pair<vk::Buffer, vk::DeviceMemory> CreateBuffer(
 }
 
 std::pair<vk::Image, vk::DeviceMemory> CreateImage(
-    vk::Device& device, vk::PhysicalDevice& physical_device, uint32_t width,
-    uint32_t height, uint32_t mip_levels, vk::SampleCountFlagBits num_samples,
-    vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage,
+    RendererState& renderer, uint32_t width, uint32_t height,
+    uint32_t mip_levels, vk::SampleCountFlagBits num_samples, vk::Format format,
+    vk::ImageTiling tiling, vk::ImageUsageFlags usage,
     vk::MemoryPropertyFlags properties)
 {
+    auto device = renderer.GetDevice();
+    auto physical_device = renderer.GetPhysicalDevice();
+
     vk::DeviceSize image_size = width * height * 4;
 
     vk::ImageCreateInfo image_info(
@@ -144,11 +153,13 @@ std::pair<vk::Image, vk::DeviceMemory> CreateImage(
     return {image, memory};
 }
 
-vk::ImageView CreateImageView(vk::Device& device, vk::Image image,
+vk::ImageView CreateImageView(RendererState& renderer, vk::Image image,
                               vk::Format format,
                               vk::ImageAspectFlags aspect_flags,
                               uint32_t mip_levels)
 {
+    auto device = renderer.GetDevice();
+
     vk::ImageViewCreateInfo view_info(
         vk::ImageViewCreateFlags(), image, vk::ImageViewType::e2D, format,
         vk::ComponentSwizzle(),
@@ -157,70 +168,56 @@ vk::ImageView CreateImageView(vk::Device& device, vk::Image image,
     return device.createImageView(view_info);
 }
 
-void TransferDataToGpuBuffer(vk::Device& device,
-                             vk::PhysicalDevice& physical_device,
-                             vk::CommandPool& transient_command_pool,
-                             vk::Queue& queue, vk::Buffer buffer,
+void TransferDataToGpuBuffer(RendererState& renderer, vk::Buffer buffer,
                              const void* data, vk::DeviceSize size)
 {
-    auto [staging_buffer, staging_buffer_memory] = CreateBuffer(
-        device, physical_device, size, vk::BufferUsageFlagBits::eTransferSrc,
-        vk::MemoryPropertyFlagBits::eHostVisible |
-            vk::MemoryPropertyFlagBits::eHostCoherent);
+    auto [staging_buffer, staging_buffer_memory] =
+        CreateBuffer(renderer, size, vk::BufferUsageFlagBits::eTransferSrc,
+                     vk::MemoryPropertyFlagBits::eHostVisible |
+                         vk::MemoryPropertyFlagBits::eHostCoherent);
 
-    void* dest = device.mapMemory(staging_buffer_memory, 0, size);
+    void* dest = renderer.GetDevice().mapMemory(staging_buffer_memory, 0, size);
     memcpy(dest, data, (size_t)size);
-    device.unmapMemory(staging_buffer_memory);
+    renderer.GetDevice().unmapMemory(staging_buffer_memory);
 
-    CopyBuffer(device, transient_command_pool, queue, staging_buffer, buffer,
-               size);
+    CopyBuffer(renderer, staging_buffer, buffer, size);
 
-    device.destroyBuffer(staging_buffer);
-    device.freeMemory(staging_buffer_memory);
+    renderer.GetDevice().destroyBuffer(staging_buffer);
+    renderer.GetDevice().freeMemory(staging_buffer_memory);
 }
 
-void TransferDataToGpuImage(vk::Device& device,
-                            vk::PhysicalDevice& physical_device,
-                            vk::CommandPool& transient_command_pool,
-                            vk::Queue& queue, uint32_t width, uint32_t height,
-                            vk::Image image, const void* data,
+void TransferDataToGpuImage(RendererState& renderer, uint32_t width,
+                            uint32_t height, vk::Image image, const void* data,
                             vk::DeviceSize size)
 {
-    auto [staging_buffer, staging_buffer_memory] = CreateBuffer(
-        device, physical_device, size, vk::BufferUsageFlagBits::eTransferSrc,
-        vk::MemoryPropertyFlagBits::eHostVisible |
-            vk::MemoryPropertyFlagBits::eHostCoherent);
+    auto [staging_buffer, staging_buffer_memory] =
+        CreateBuffer(renderer, size, vk::BufferUsageFlagBits::eTransferSrc,
+                     vk::MemoryPropertyFlagBits::eHostVisible |
+                         vk::MemoryPropertyFlagBits::eHostCoherent);
 
-    void* dest = device.mapMemory(staging_buffer_memory, 0, size);
+    void* dest = renderer.GetDevice().mapMemory(staging_buffer_memory, 0, size);
     memcpy(dest, data, (size_t)size);
-    device.unmapMemory(staging_buffer_memory);
+    renderer.GetDevice().unmapMemory(staging_buffer_memory);
 
-    CopyBufferToImage(device, transient_command_pool, queue, staging_buffer,
-                      image, width, height);
+    CopyBufferToImage(renderer, staging_buffer, image, width, height);
 
-    device.destroyBuffer(staging_buffer);
-    device.freeMemory(staging_buffer_memory);
+    renderer.GetDevice().destroyBuffer(staging_buffer);
+    renderer.GetDevice().freeMemory(staging_buffer_memory);
 }
 
-void CopyBuffer(vk::Device& device, vk::CommandPool& transient_command_pool,
-                vk::Queue& queue, vk::Buffer src, vk::Buffer dst,
+void CopyBuffer(RendererState& renderer, vk::Buffer src, vk::Buffer dst,
                 vk::DeviceSize size)
 {
     vk::BufferCopy copy_info(0, 0, size);
-    auto transfer_command_buffer =
-        BeginSingleTimeCommands(device, transient_command_pool);
+    auto transfer_command_buffer = renderer.BeginSingleTimeCommands();
     transfer_command_buffer.copyBuffer(src, dst, copy_info);
-    EndSingleTimeCommands(device, transient_command_pool,
-                          transfer_command_buffer, queue);
+    renderer.EndSingleTimeCommands(transfer_command_buffer);
 }
 
-void CopyBufferToImage(vk::Device& device,
-                       vk::CommandPool& transient_command_pool,
-                       vk::Queue& queue, vk::Buffer buffer, vk::Image image,
-                       uint32_t width, uint32_t height)
+void CopyBufferToImage(RendererState& renderer, vk::Buffer buffer,
+                       vk::Image image, uint32_t width, uint32_t height)
 {
-    auto command_buffer =
-        BeginSingleTimeCommands(device, transient_command_pool);
+    auto command_buffer = renderer.BeginSingleTimeCommands();
 
     vk::BufferImageCopy region(
         0, 0, 0,
@@ -230,18 +227,14 @@ void CopyBufferToImage(vk::Device& device,
     command_buffer.copyBufferToImage(
         buffer, image, vk::ImageLayout::eTransferDstOptimal, region);
 
-    EndSingleTimeCommands(device, transient_command_pool, command_buffer,
-                          queue);
+    renderer.EndSingleTimeCommands(command_buffer);
 }
 
-void TransitionImageLayout(vk::Device& device,
-                           vk::CommandPool& transient_command_pool,
-                           vk::Queue& queue, vk::Image image, vk::Format format,
-                           vk::ImageLayout old_layout,
+void TransitionImageLayout(RendererState& renderer, vk::Image image,
+                           vk::Format format, vk::ImageLayout old_layout,
                            vk::ImageLayout new_layout, uint32_t mip_levels)
 {
-    auto command_buffer =
-        BeginSingleTimeCommands(device, transient_command_pool);
+    auto command_buffer = renderer.BeginSingleTimeCommands();
 
     vk::AccessFlags source_access_mask;
     vk::AccessFlags destination_access_mask;
@@ -290,24 +283,22 @@ void TransitionImageLayout(vk::Device& device,
     command_buffer.pipelineBarrier(source_stage, destination_stage,
                                    vk::DependencyFlags(), {}, {}, barrier);
 
-    EndSingleTimeCommands(device, transient_command_pool, command_buffer,
-                          queue);
+    renderer.EndSingleTimeCommands(command_buffer);
 }
 
-void GenerateMipMaps(vk::PhysicalDevice& physical_device, vk::Device& device,
-                     vk::CommandPool& transient_command_pool, vk::Queue& queue,
-                     vk::Image image, vk::Format format, int32_t texture_width,
+void GenerateMipMaps(RendererState& renderer, vk::Image image,
+                     vk::Format format, int32_t texture_width,
                      int32_t texture_height, uint32_t mip_levels)
 {
-    auto format_properties = physical_device.getFormatProperties(format);
+    auto format_properties =
+        renderer.GetPhysicalDevice().getFormatProperties(format);
     if (!(format_properties.optimalTilingFeatures &
           vk::FormatFeatureFlagBits::eSampledImageFilterLinear)) {
         throw std::runtime_error(
             "texture image format does not support linear blitting!");
     }
 
-    auto command_buffer =
-        BeginSingleTimeCommands(device, transient_command_pool);
+    auto command_buffer = renderer.BeginSingleTimeCommands();
 
     vk::ImageMemoryBarrier barrier(
         vk::AccessFlags(0), vk::AccessFlags(0), vk::ImageLayout::eUndefined,
@@ -375,38 +366,7 @@ void GenerateMipMaps(vk::PhysicalDevice& physical_device, vk::Device& device,
                                    vk::PipelineStageFlagBits::eFragmentShader,
                                    {}, {}, {}, barrier);
 
-    EndSingleTimeCommands(device, transient_command_pool, command_buffer,
-                          queue);
-}
-
-vk::CommandBuffer BeginSingleTimeCommands(
-    vk::Device& device, vk::CommandPool& transient_command_pool)
-{
-    vk::CommandBufferAllocateInfo alloc_info(
-        transient_command_pool, vk::CommandBufferLevel::ePrimary, 1);
-
-    vk::CommandBuffer command_buffer =
-        device.allocateCommandBuffers(alloc_info)[0];
-
-    vk::CommandBufferBeginInfo begin_info(
-        vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
-
-    command_buffer.begin(begin_info);
-    return command_buffer;
-}
-
-void EndSingleTimeCommands(vk::Device& device,
-                           vk::CommandPool& transient_command_pool,
-                           vk::CommandBuffer command_buffer, vk::Queue& queue)
-{
-    command_buffer.end();
-
-    vk::SubmitInfo submit_info({}, {}, command_buffer, {});
-
-    queue.submit(submit_info);
-    queue.waitIdle();
-
-    device.freeCommandBuffers(transient_command_pool, command_buffer);
+    renderer.EndSingleTimeCommands(command_buffer);
 }
 
 bool HasStencilComponent(vk::Format format)

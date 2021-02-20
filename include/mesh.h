@@ -1,18 +1,19 @@
 #pragma once
 
 #include <vector>
+
+#define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
 #include <vulkan/vulkan.hpp>
 
+#include "gpu_buffer.h"
 #include "tiny_obj_loader.h"
 #include "vertex.h"
-#include "gpu_buffer.h"
 
 class Mesh
 {
 public:
-    Mesh(vk::PhysicalDevice& physical_device, vk::Device& device,
-         vk::CommandPool& transient_command_pool, vk::Queue& queue,
-         const tinyobj::attrib_t attribs, const tinyobj::shape_t& shape);
+    Mesh(RendererState& renderer, const tinyobj::attrib_t attribs,
+         const tinyobj::shape_t& shape);
     Mesh(const Mesh&) = delete;
     Mesh(Mesh&& mesh);
 

@@ -1,5 +1,6 @@
 #include "gpu_image.h"
 
+#include "renderer_state.h"
 #include "utils.h"
 
 GpuImage::GpuImage(vk::Device& device) : device_(device){};
@@ -17,27 +18,23 @@ GpuImage& GpuImage::operator=(GpuImage&& other)
 
 GpuImage::~GpuImage() { Cleanup(); }
 
-void GpuImage::SetData(vk::PhysicalDevice& physical_device, vk::Device& device,
-                       vk::CommandPool& transient_command_pool,
-                       vk::Queue& queue, uint32_t width, uint32_t height,
+void GpuImage::SetData(RendererState& renderer, uint32_t width, uint32_t height,
                        const uint8_t* data, uint32_t mip_levels,
                        vk::SampleCountFlagBits num_samples, vk::Format format,
                        vk::ImageTiling tiling, vk::ImageUsageFlags usage,
                        vk::MemoryPropertyFlags properties)
 {
-    device_ = device;
+    device_ = renderer.GetDevice();
     vk::DeviceSize size = width * height * 4;
     std::tie(image_, memory_) =
-        CreateImage(device_, physical_device, width, height, mip_levels,
-                    num_samples, format, tiling, usage, properties);
+        CreateImage(renderer, width, height, mip_levels, num_samples, format,
+                    tiling, usage, properties);
 
-    TransitionImageLayout(device, transient_command_pool, queue, image_,
-                          vk::Format::eR8G8B8A8Srgb,
+    TransitionImageLayout(renderer, image_, vk::Format::eR8G8B8A8Srgb,
                           vk::ImageLayout::eUndefined,
                           vk::ImageLayout::eTransferDstOptimal, mip_levels);
 
-    TransferDataToGpuImage(device_, physical_device, transient_command_pool,
-                           queue, width, height, image_,
+    TransferDataToGpuImage(renderer, width, height, image_,
                            static_cast<const void*>(data), size);
 }
 

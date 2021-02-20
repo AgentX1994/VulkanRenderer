@@ -3,8 +3,7 @@
 #include <iostream>
 #include <type_traits>
 
-Model::Model(vk::PhysicalDevice& physical_device, vk::Device& device,
-             vk::CommandPool& transient_command_pool, vk::Queue& queue,
+Model::Model(RendererState& renderer,
              std::string path)
 {
     tinyobj::ObjReaderConfig config;
@@ -30,7 +29,7 @@ Model::Model(vk::PhysicalDevice& physical_device, vk::Device& device,
 
     for (const auto& shape : shapes) {
         static_assert(std::is_move_constructible_v<Mesh>);
-        Mesh mesh(physical_device, device, transient_command_pool, queue,
+        Mesh mesh(renderer,
                   attrib, shape);
         meshes_.emplace_back(std::move(mesh));
         // meshes_.emplace_back(physical_device, device, transient_command_pool, queue,

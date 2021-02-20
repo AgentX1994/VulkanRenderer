@@ -2,29 +2,31 @@
 
 #include <array>
 #include <vector>
+
+#define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
 #include <vulkan/vulkan.hpp>
 
+#include "renderer_state.h"
 #include "utils.h"
 
 class GpuBuffer
 {
 public:
     GpuBuffer(vk::Device& device);
+    GpuBuffer(RendererState& renderer,  vk::DeviceSize buffer_size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties);
 
     template <typename Container>
-    void SetData(vk::PhysicalDevice& physical_device, vk::Device& device,
-                 vk::CommandPool& transient_command_pool, vk::Queue& queue,
+    void SetData(RendererState& renderer,
                  const Container& data, vk::BufferUsageFlags usage,
                  vk::MemoryPropertyFlags properties)
     {
-        device_ = device;
+        device_ = renderer.GetDevice();
         vk::DeviceSize size =
             data.size() * sizeof(typename Container::value_type);
         std::tie(buffer_, memory_) =
-            CreateBuffer(device_, physical_device, size, usage, properties);
+            CreateBuffer(renderer, size, usage, properties);
 
-        TransferDataToGpuBuffer(device_, physical_device,
-                                transient_command_pool, queue, buffer_,
+        TransferDataToGpuBuffer(renderer, buffer_,
                                 static_cast<const void*>(data.data()), size);
     }
 
@@ -37,6 +39,7 @@ public:
     ~GpuBuffer();
 
     vk::Buffer GetBuffer();
+    vk::DeviceMemory GetMemory();
 
 private:
     void Cleanup();

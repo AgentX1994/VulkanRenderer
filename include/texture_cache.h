@@ -3,15 +3,17 @@
 #include <map>
 #include <optional>
 
+#define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
 #include <vulkan/vulkan.hpp>
 
 #include "texture.h"
 
+class RendererState;
+
 class TextureCache
 {
 public:
-    void LoadTexture(vk::PhysicalDevice physical_device, vk::Device& device,
-                     vk::CommandPool& transient_command_pool, vk::Queue& queue,
+    void LoadTexture(RendererState& renderer,
                      std::string path);
     
     const Texture* GetTextureByPath(std::string path);

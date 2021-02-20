@@ -2,10 +2,11 @@
 
 #include <cmath>
 
-Texture::Texture(vk::PhysicalDevice& physical_device, vk::Device& device,
-                 vk::CommandPool& transient_command_pool, vk::Queue& queue,
+#include "renderer_state.h"
+
+Texture::Texture(RendererState& renderer,
                  std::string texture_path)
-    : device_(device), image_(device)
+    : device_(renderer.GetDevice()), image_(renderer.GetDevice())
 {
     int texture_width, texture_height, texture_channels;
     stbi_uc* pixels =
@@ -22,7 +23,7 @@ Texture::Texture(vk::PhysicalDevice& physical_device, vk::Device& device,
             std::floor(std::log2(std::max(texture_width, texture_height)))) +
         1;
 
-    image_.SetData(physical_device, device, transient_command_pool, queue,
+    image_.SetData(renderer,
                    texture_width, texture_height, pixels, mip_levels,
                    vk::SampleCountFlagBits::e1, vk::Format::eR8G8B8A8Srgb,
                    vk::ImageTiling::eOptimal,
@@ -38,12 +39,12 @@ Texture::Texture(vk::PhysicalDevice& physical_device, vk::Device& device,
     //                         vk::ImageLayout::eTransferDstOptimal,
     //                         vk::ImageLayout::eShaderReadOnlyOptimal,
     //                         mip_levels_);
-    GenerateMipMaps(physical_device, device, transient_command_pool, queue,
+    GenerateMipMaps(renderer,
                     image_.GetImage(), vk::Format::eR8G8B8A8Srgb, texture_width,
                     texture_height, mip_levels);
 
     image_view_ =
-        CreateImageView(device, image_.GetImage(), vk::Format::eR8G8B8A8Srgb,
+        CreateImageView(renderer, image_.GetImage(), vk::Format::eR8G8B8A8Srgb,
                         vk::ImageAspectFlagBits::eColor, mip_levels);
 }
 

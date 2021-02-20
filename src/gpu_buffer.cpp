@@ -4,21 +4,25 @@
 
 GpuBuffer::GpuBuffer(vk::Device& device) : device_(device){};
 
+GpuBuffer::GpuBuffer(RendererState& renderer, vk::DeviceSize buffer_size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties)
+: device_(renderer.GetDevice())
+{
+    std::tie(buffer_, memory_) =
+        CreateBuffer(renderer, buffer_size, usage, properties);
+}
+
 GpuBuffer::GpuBuffer(GpuBuffer&& other) : device_(other.device_)
 {
     MoveFrom(std::move(other));
 }
 
 GpuBuffer& GpuBuffer::operator=(GpuBuffer&& other)
-{   
+{
     MoveFrom(std::move(other));
     return *this;
 }
 
-GpuBuffer::~GpuBuffer()
-{
-    Cleanup();
-}
+GpuBuffer::~GpuBuffer() { Cleanup(); }
 
 void GpuBuffer::Cleanup()
 {
@@ -40,7 +44,6 @@ void GpuBuffer::MoveFrom(GpuBuffer&& other)
     other.memory_ = (VkDeviceMemory)VK_NULL_HANDLE;
 }
 
-vk::Buffer GpuBuffer::GetBuffer()
-{
-    return buffer_;
-}
+vk::Buffer GpuBuffer::GetBuffer() { return buffer_; }
+
+vk::DeviceMemory GpuBuffer::GetMemory() { return memory_; }

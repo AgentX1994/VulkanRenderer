@@ -2,9 +2,13 @@
 
 #include <array>
 #include <vector>
+
+#define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
 #include <vulkan/vulkan.hpp>
 
 #include "utils.h"
+
+class RendererState;
 
 class GpuImage
 {
@@ -19,12 +23,11 @@ public:
 
     ~GpuImage();
 
-    void SetData(vk::PhysicalDevice& physical_device, vk::Device& device,
-                 vk::CommandPool& transient_command_pool, vk::Queue& queue,
-                 uint32_t width, uint32_t height, const uint8_t* data,
-                 uint32_t mip_levels, vk::SampleCountFlagBits num_samples,
-                 vk::Format format, vk::ImageTiling tiling,
-                 vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties);
+    void SetData(RendererState& renderer, uint32_t width, uint32_t height,
+                 const uint8_t* data, uint32_t mip_levels,
+                 vk::SampleCountFlagBits num_samples, vk::Format format,
+                 vk::ImageTiling tiling, vk::ImageUsageFlags usage,
+                 vk::MemoryPropertyFlags properties);
 
     vk::Image GetImage();
 
