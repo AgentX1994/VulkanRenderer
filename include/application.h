@@ -65,7 +65,6 @@ private:
     void SetupDebugMessenger();
     
     std::vector<const char*> GetRequiredExtensions();
-    void CreateFramebuffers();
     void CreateCommandBuffers();
     void CreateSyncObjects();
     void CleanupSwapChain();
@@ -93,8 +92,6 @@ private:
     std::vector<Model> models_;
 
     std::vector<GpuBuffer> uniform_buffers_;
-
-    std::vector<vk::Framebuffer> swapchain_frame_buffers_;
 
     std::optional<Texture> texture_image_;
     vk::Sampler texture_sampler_;

@@ -9,9 +9,9 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
+#include "material_cache.h"
 #include "swapchain.h"
 #include "texture_cache.h"
-#include "material_cache.h"
 
 class Swapchain;
 
@@ -53,6 +53,8 @@ public:
     Swapchain& GetSwapchain();
 
     vk::RenderPass& GetRenderPass();
+
+    std::vector<vk::Framebuffer>& GetFramebuffers();
 
     vk::DescriptorSetLayout& GetDescriptorSetLayout();
 
@@ -125,13 +127,15 @@ private:
     std::tuple<vk::Device, vk::Queue, vk::Queue, vk::Queue>
     CreateDeviceAndQueues(const std::vector<const char*> extensions,
                           const std::vector<const char*> layers);
-    
+
     void CreateColorResources();
     void CreateDepthResources();
 
     vk::CommandPool CreateCommandPool(uint32_t queue_index);
 
     vk::RenderPass CreateRenderPass();
+
+    void CreateFramebuffers();
 
     vk::DescriptorSetLayout CreateDescriptorSetLayout();
 
@@ -164,6 +168,8 @@ private:
     MaterialCache material_cache_;
 
     vk::RenderPass render_pass_;
+
+    std::vector<vk::Framebuffer> swapchain_frame_buffers_;
 
     vk::DescriptorSetLayout descriptor_set_layout_;
 

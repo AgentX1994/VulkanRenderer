@@ -36,12 +36,17 @@ RendererState::RendererState(
     CreateDepthResources();
 
     render_pass_ = CreateRenderPass();
+    CreateFramebuffers();
     descriptor_set_layout_ = CreateDescriptorSetLayout();
 }
 
 RendererState::~RendererState()
 {
     device_.waitIdle();
+
+    for (auto fb : swapchain_frame_buffers_) {
+        device_.destroyFramebuffer(fb);
+    }
 
     texture_cache_.Clear();
     material_cache_.Clear();
@@ -110,35 +115,39 @@ void RendererState::RecreateSwapchain(GLFWwindow* window)
 
     device_.waitIdle();
 
+    for (auto fb : swapchain_frame_buffers_) {
+        device_.destroyFramebuffer(fb);
+    }
+
     device_.destroyImageView(color_image_view_);
     color_image_.reset();
     device_.destroyImageView(depth_image_view_);
     depth_image_.reset();
-    
+
     swapchain_->RecreateSwapchain(*this, window);
 
     CreateColorResources();
     CreateDepthResources();
+    CreateFramebuffers();
 }
 
 Swapchain& RendererState::GetSwapchain() { return swapchain_.value(); }
 
 vk::RenderPass& RendererState::GetRenderPass() { return render_pass_; }
 
+std::vector<vk::Framebuffer>& RendererState::GetFramebuffers()
+{
+    return swapchain_frame_buffers_;
+}
+
 vk::DescriptorSetLayout& RendererState::GetDescriptorSetLayout()
 {
     return descriptor_set_layout_;
 }
 
-vk::ImageView& RendererState::GetColorImageView()
-{
-    return color_image_view_;
-}
+vk::ImageView& RendererState::GetColorImageView() { return color_image_view_; }
 
-vk::ImageView& RendererState::GetDepthImageView()
-{
-    return depth_image_view_;
-}
+vk::ImageView& RendererState::GetDepthImageView() { return depth_image_view_; }
 
 RendererState::QueueFamilyIndices RendererState::GetQueueFamilies()
 {
@@ -467,13 +476,13 @@ void RendererState::CreateColorResources()
     auto color_format = swapchain_->GetImageFormat().format;
 
     color_image_.emplace(*this, extent.width, extent.height, 1, msaa_samples_,
-                 color_format, vk::ImageTiling::eOptimal,
-                 vk::ImageUsageFlagBits::eTransientAttachment |
-                     vk::ImageUsageFlagBits::eColorAttachment,
-                 vk::MemoryPropertyFlagBits::eDeviceLocal);
+                         color_format, vk::ImageTiling::eOptimal,
+                         vk::ImageUsageFlagBits::eTransientAttachment |
+                             vk::ImageUsageFlagBits::eColorAttachment,
+                         vk::MemoryPropertyFlagBits::eDeviceLocal);
     color_image_view_ =
-        CreateImageView(*this, color_image_->GetImage(),
-                        color_format, vk::ImageAspectFlagBits::eColor, 1);
+        CreateImageView(*this, color_image_->GetImage(), color_format,
+                        vk::ImageAspectFlagBits::eColor, 1);
 }
 
 void RendererState::CreateDepthResources()
@@ -481,15 +490,14 @@ void RendererState::CreateDepthResources()
     vk::Format depth_format = FindDepthFormat(physical_device_);
 
     auto extent = swapchain_->GetExtent();
-    depth_image_.emplace(*this, extent.width, extent.height, 1,
-                            msaa_samples_, depth_format,
-                            vk::ImageTiling::eOptimal,
-                            vk::ImageUsageFlagBits::eDepthStencilAttachment,
-                            vk::MemoryPropertyFlagBits::eDeviceLocal);
+    depth_image_.emplace(*this, extent.width, extent.height, 1, msaa_samples_,
+                         depth_format, vk::ImageTiling::eOptimal,
+                         vk::ImageUsageFlagBits::eDepthStencilAttachment,
+                         vk::MemoryPropertyFlagBits::eDeviceLocal);
 
     depth_image_view_ =
-        CreateImageView(*this, depth_image_->GetImage(),
-                        depth_format, vk::ImageAspectFlagBits::eDepth, 1);
+        CreateImageView(*this, depth_image_->GetImage(), depth_format,
+                        vk::ImageAspectFlagBits::eDepth, 1);
     TransitionImageLayout(*this, depth_image_->GetImage(), depth_format,
                           vk::ImageLayout::eUndefined,
                           vk::ImageLayout::eDepthStencilAttachmentOptimal, 1);
@@ -513,10 +521,10 @@ vk::RenderPass RendererState::CreateRenderPass()
         vk::ImageLayout::eColorAttachmentOptimal);
 
     vk::AttachmentDescription depth_attachment(
-        vk::AttachmentDescriptionFlags(), FindDepthFormat(physical_device_), msaa_samples_,
-        vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eDontCare,
-        vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eDontCare,
-        vk::ImageLayout::eUndefined,
+        vk::AttachmentDescriptionFlags(), FindDepthFormat(physical_device_),
+        msaa_samples_, vk::AttachmentLoadOp::eClear,
+        vk::AttachmentStoreOp::eDontCare, vk::AttachmentLoadOp::eDontCare,
+        vk::AttachmentStoreOp::eDontCare, vk::ImageLayout::eUndefined,
         vk::ImageLayout::eDepthStencilAttachmentOptimal);
 
     vk::AttachmentDescription color_attachment_resolve(
@@ -557,6 +565,26 @@ vk::RenderPass RendererState::CreateRenderPass()
                                               attachments, subpass, dependency);
 
     return device_.createRenderPass(render_pass_info);
+}
+
+void RendererState::CreateFramebuffers()
+{
+    auto image_count = swapchain_->GetActualImageCount();
+    swapchain_frame_buffers_.resize(image_count);
+    auto& image_views = swapchain_->GetImageViews();
+    auto extent = swapchain_->GetExtent();
+
+    for (size_t i = 0; i < image_count; ++i) {
+        std::array<vk::ImageView, 3> attachments = {
+            color_image_view_, depth_image_view_, image_views[i]};
+
+        vk::FramebufferCreateInfo framebuffer_info(
+            vk::FramebufferCreateFlags(), render_pass_, attachments,
+            extent.width, extent.height, 1);
+
+        swapchain_frame_buffers_[i] =
+            device_.createFramebuffer(framebuffer_info);
+    }
 }
 
 vk::DescriptorSetLayout RendererState::CreateDescriptorSetLayout()

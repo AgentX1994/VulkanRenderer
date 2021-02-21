@@ -110,7 +110,6 @@ void Application::InitVulkan()
 {
     CreateRenderer();
     // SetupDebugMessenger();
-    CreateFramebuffers();
     CreateTextureImage();
     CreateTextureSampler();
     LoadModel();
@@ -236,39 +235,16 @@ void Application::SetupDebugMessenger()
     }
 }
 
-void Application::CreateFramebuffers()
-{
-    auto& swapchain = renderer_->GetSwapchain();
-    auto image_count = swapchain.GetActualImageCount();
-    swapchain_frame_buffers_.resize(image_count);
-    auto& image_views = swapchain.GetImageViews();
-    auto& render_pass = renderer_->GetRenderPass();
-    auto extent = swapchain.GetExtent();
-
-    auto& color_image_view = renderer_->GetColorImageView();
-    auto& depth_image_view = renderer_->GetDepthImageView();
-
-    for (size_t i = 0; i < image_count; ++i) {
-        std::array<vk::ImageView, 3> attachments = {
-            color_image_view, depth_image_view, image_views[i]};
-
-        vk::FramebufferCreateInfo framebuffer_info(
-            vk::FramebufferCreateFlags(), render_pass, attachments,
-            extent.width, extent.height, 1);
-
-        swapchain_frame_buffers_[i] =
-            renderer_->GetDevice().createFramebuffer(framebuffer_info);
-    }
-}
-
 void Application::CreateCommandBuffers()
 {
     vk::CommandBufferAllocateInfo alloc_info(
         renderer_->GetGraphicsCommandPool(), vk::CommandBufferLevel::ePrimary,
-        swapchain_frame_buffers_.size());
+        renderer_->GetSwapchain().GetActualImageCount());
 
     command_buffers_ =
         renderer_->GetDevice().allocateCommandBuffers(alloc_info);
+
+    auto& framebuffers = renderer_->GetFramebuffers();
 
     for (size_t i = 0; i < command_buffers_.size(); ++i) {
         vk::CommandBufferBeginInfo begin_info(vk::CommandBufferUsageFlags(),
@@ -282,7 +258,7 @@ void Application::CreateCommandBuffers()
         clear_values[1].depthStencil.setStencil(0);
 
         vk::RenderPassBeginInfo render_pass_info(
-            renderer_->GetRenderPass(), swapchain_frame_buffers_[i],
+            renderer_->GetRenderPass(), framebuffers[i],
             {{0, 0}, renderer_->GetSwapchain().GetExtent()}, clear_values);
 
         command_buffers_[i].beginRenderPass(render_pass_info,
@@ -489,9 +465,6 @@ void Application::CleanupSwapChain()
 
     renderer_->GetDevice().destroyDescriptorPool(descriptor_pool_);
 
-    for (auto framebuffer : swapchain_frame_buffers_) {
-        renderer_->GetDevice().destroyFramebuffer(framebuffer);
-    }
     renderer_->GetDevice().freeCommandBuffers(
         renderer_->GetGraphicsCommandPool(), command_buffers_);
 }
@@ -500,7 +473,6 @@ void Application::RecreateSwapChain()
 {
     renderer_->RecreateSwapchain(window_);
 
-    CreateFramebuffers();
     CreateUniformBuffers();
     CreateDescriptorPool();
     CreateDescriptorSets();
