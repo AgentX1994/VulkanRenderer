@@ -5,6 +5,18 @@
 
 GpuImage::GpuImage(vk::Device& device) : device_(device){};
 
+GpuImage::GpuImage(RendererState& renderer, uint32_t width, uint32_t height,
+                   uint32_t mip_levels, vk::SampleCountFlagBits num_samples,
+                   vk::Format format, vk::ImageTiling tiling,
+                   vk::ImageUsageFlags usage,
+                   vk::MemoryPropertyFlags properties)
+    : device_(renderer.GetDevice())
+{
+    std::tie(image_, memory_) =
+        CreateImage(renderer, width, height, mip_levels, num_samples, format,
+                    tiling, usage, properties);
+}
+
 GpuImage::GpuImage(GpuImage&& other) : device_(other.device_)
 {
     MoveFrom(std::move(other));

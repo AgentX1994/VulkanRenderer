@@ -3,8 +3,7 @@
 #include <iostream>
 #include <type_traits>
 
-Model::Model(RendererState& renderer,
-             std::string path)
+Model::Model(RendererState& renderer, std::string path)
 {
     tinyobj::ObjReaderConfig config;
     config.mtl_search_path = "./materials";
@@ -29,16 +28,32 @@ Model::Model(RendererState& renderer,
 
     for (const auto& shape : shapes) {
         static_assert(std::is_move_constructible_v<Mesh>);
-        Mesh mesh(renderer,
-                  attrib, shape);
+        Mesh mesh(renderer, attrib, shape);
         meshes_.emplace_back(std::move(mesh));
-        // meshes_.emplace_back(physical_device, device, transient_command_pool, queue,
+        // meshes_.emplace_back(physical_device, device, transient_command_pool,
+        // queue,
         //           attrib, shape);
+    }
+
+    for (auto mat : materials_) {
+        renderer.GetMaterialCache().LoadMaterial(renderer, mat.name, mat);
     }
 }
 
-void Model::RecordDrawCommand(vk::CommandBuffer& command_buffer)
+void Model::RecordDrawCommand(
+    RendererState& renderer, vk::CommandBuffer& command_buffer,
+    /* temporary */ vk::DescriptorSet descriptor_set)
 {
+    Material* material =
+        renderer.GetMaterialCache().GetMaterialByName(materials_[0].name);
+    if (material != nullptr) {
+        command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics,
+                                    material->GetGraphicsPipeline());
+
+        command_buffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+                                          material->GetGraphicsPipelineLayout(),
+                                          0, descriptor_set, {});
+    }
     for (auto& mesh : meshes_) {
         mesh.RecordDrawCommand(command_buffer);
     }
@@ -59,7 +74,6 @@ uint32_t Model::GetTriangleCount()
     uint32_t count = 0;
     for (auto& mesh : meshes_) {
         count += mesh.GetTriangleCount();
- 
     }
 
     return count;

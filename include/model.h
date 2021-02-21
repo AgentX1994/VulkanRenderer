@@ -12,10 +12,11 @@
 class Model
 {
 public:
-    Model(RendererState& renderer,
-          std::string path);
+    Model(RendererState& renderer, std::string path);
 
-    void RecordDrawCommand(vk::CommandBuffer& command_buffer);
+    void RecordDrawCommand(RendererState& renderer,
+                           vk::CommandBuffer& command_buffer,
+                           /* temporary */ vk::DescriptorSet descriptor_set);
 
     uint32_t GetVertexCount();
     uint32_t GetTriangleCount();

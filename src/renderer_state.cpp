@@ -3,6 +3,9 @@
 #include <iostream>
 #include <unordered_map>
 
+#include "swapchain.h"
+#include "texture_cache.h"
+
 const std::string ENGINE_NAME = "VulkanRenderer";
 
 RendererState::RendererState(
@@ -27,10 +30,31 @@ RendererState::RendererState(
 
     transient_command_pool_ =
         CreateCommandPool(queue_families_.transfer_family->index);
+
+    swapchain_.emplace(*this, window);
+    CreateColorResources();
+    CreateDepthResources();
+
+    render_pass_ = CreateRenderPass();
+    descriptor_set_layout_ = CreateDescriptorSetLayout();
 }
 
 RendererState::~RendererState()
 {
+    device_.waitIdle();
+
+    texture_cache_.Clear();
+    material_cache_.Clear();
+
+    device_.destroyImageView(color_image_view_);
+    color_image_.reset();
+    device_.destroyImageView(depth_image_view_);
+    depth_image_.reset();
+
+    device_.destroyRenderPass(render_pass_);
+    device_.destroyDescriptorSetLayout(descriptor_set_layout_);
+
+    swapchain_.reset();
     device_.destroyCommandPool(transient_command_pool_);
     device_.destroyCommandPool(graphics_command_pool_);
     device_.destroy();
@@ -67,9 +91,53 @@ vk::Queue& RendererState::GetTransferQueue() { return transfer_queue_; }
 
 TextureCache& RendererState::GetTextureCache() { return texture_cache_; }
 
+MaterialCache& RendererState::GetMaterialCache() { return material_cache_; }
+
 vk::SampleCountFlagBits RendererState::GetMaxSampleCount()
 {
     return msaa_samples_;
+}
+
+void RendererState::RecreateSwapchain(GLFWwindow* window)
+{
+    // handle minimization
+    int width = 0, height = 0;
+    glfwGetFramebufferSize(window, &width, &height);
+    while (width == 0 || height == 0) {
+        glfwGetFramebufferSize(window, &width, &height);
+        glfwWaitEvents();
+    }
+
+    device_.waitIdle();
+
+    device_.destroyImageView(color_image_view_);
+    color_image_.reset();
+    device_.destroyImageView(depth_image_view_);
+    depth_image_.reset();
+    
+    swapchain_->RecreateSwapchain(*this, window);
+
+    CreateColorResources();
+    CreateDepthResources();
+}
+
+Swapchain& RendererState::GetSwapchain() { return swapchain_.value(); }
+
+vk::RenderPass& RendererState::GetRenderPass() { return render_pass_; }
+
+vk::DescriptorSetLayout& RendererState::GetDescriptorSetLayout()
+{
+    return descriptor_set_layout_;
+}
+
+vk::ImageView& RendererState::GetColorImageView()
+{
+    return color_image_view_;
+}
+
+vk::ImageView& RendererState::GetDepthImageView()
+{
+    return depth_image_view_;
 }
 
 RendererState::QueueFamilyIndices RendererState::GetQueueFamilies()
@@ -325,7 +393,8 @@ vk::PhysicalDevice RendererState::CreatePhysicalDevice(
     return physical_device;
 }
 
-vk::QueueFamilyProperties RendererState::GetQueueFamilyPropertiesByIndex(uint32_t index)
+vk::QueueFamilyProperties RendererState::GetQueueFamilyPropertiesByIndex(
+    uint32_t index)
 {
     auto queue_families = physical_device_.getQueueFamilyProperties();
     return queue_families.at(index);
@@ -352,10 +421,11 @@ RendererState::CreateDeviceAndQueues(const std::vector<const char*> extensions,
     const float priority = 1.0f;
     std::vector<vk::DeviceQueueCreateInfo> queue_create_infos;
     for (const auto& index_map_entry : index_to_count_map) {
-        vk::QueueFamilyProperties properties = GetQueueFamilyPropertiesByIndex(index_map_entry.first);
-        vk::DeviceQueueCreateInfo info = {vk::DeviceQueueCreateFlags(),
-                                          index_map_entry.first,
-                                          std::min(index_map_entry.second, properties.queueCount), &priority};
+        vk::QueueFamilyProperties properties =
+            GetQueueFamilyPropertiesByIndex(index_map_entry.first);
+        vk::DeviceQueueCreateInfo info = {
+            vk::DeviceQueueCreateFlags(), index_map_entry.first,
+            std::min(index_map_entry.second, properties.queueCount), &priority};
         queue_create_infos.push_back(info);
     };
 
@@ -375,14 +445,54 @@ RendererState::CreateDeviceAndQueues(const std::vector<const char*> extensions,
     auto device = physical_device_.createDevice(create_info);
 
     vk::Queue graphics_queue = device.getQueue(
-        queue_families_.graphics_family->index, graphics_queue_offset % queue_families_.graphics_family->properties.queueCount);
+        queue_families_.graphics_family->index,
+        graphics_queue_offset %
+            queue_families_.graphics_family->properties.queueCount);
     vk::Queue present_queue = device.getQueue(
-        queue_families_.present_family->index, present_queue_offset % queue_families_.present_family->properties.queueCount);
+        queue_families_.present_family->index,
+        present_queue_offset %
+            queue_families_.present_family->properties.queueCount);
     vk::Queue transfer_queue = device.getQueue(
-        queue_families_.transfer_family->index, transfer_queue_offset % queue_families_.transfer_family->properties.queueCount);
+        queue_families_.transfer_family->index,
+        transfer_queue_offset %
+            queue_families_.transfer_family->properties.queueCount);
 
     VULKAN_HPP_DEFAULT_DISPATCHER.init(device);
     return {device, graphics_queue, present_queue, transfer_queue};
+}
+
+void RendererState::CreateColorResources()
+{
+    auto extent = swapchain_->GetExtent();
+    auto color_format = swapchain_->GetImageFormat().format;
+
+    color_image_.emplace(*this, extent.width, extent.height, 1, msaa_samples_,
+                 color_format, vk::ImageTiling::eOptimal,
+                 vk::ImageUsageFlagBits::eTransientAttachment |
+                     vk::ImageUsageFlagBits::eColorAttachment,
+                 vk::MemoryPropertyFlagBits::eDeviceLocal);
+    color_image_view_ =
+        CreateImageView(*this, color_image_->GetImage(),
+                        color_format, vk::ImageAspectFlagBits::eColor, 1);
+}
+
+void RendererState::CreateDepthResources()
+{
+    vk::Format depth_format = FindDepthFormat(physical_device_);
+
+    auto extent = swapchain_->GetExtent();
+    depth_image_.emplace(*this, extent.width, extent.height, 1,
+                            msaa_samples_, depth_format,
+                            vk::ImageTiling::eOptimal,
+                            vk::ImageUsageFlagBits::eDepthStencilAttachment,
+                            vk::MemoryPropertyFlagBits::eDeviceLocal);
+
+    depth_image_view_ =
+        CreateImageView(*this, depth_image_->GetImage(),
+                        depth_format, vk::ImageAspectFlagBits::eDepth, 1);
+    TransitionImageLayout(*this, depth_image_->GetImage(), depth_format,
+                          vk::ImageLayout::eUndefined,
+                          vk::ImageLayout::eDepthStencilAttachmentOptimal, 1);
 }
 
 vk::CommandPool RendererState::CreateCommandPool(uint32_t queue_index)
@@ -391,4 +501,79 @@ vk::CommandPool RendererState::CreateCommandPool(uint32_t queue_index)
                                         queue_index);
 
     return device_.createCommandPool(pool_info);
+}
+
+vk::RenderPass RendererState::CreateRenderPass()
+{
+    vk::AttachmentDescription color_attachment(
+        vk::AttachmentDescriptionFlags(), swapchain_->GetImageFormat().format,
+        msaa_samples_, vk::AttachmentLoadOp::eClear,
+        vk::AttachmentStoreOp::eStore, vk::AttachmentLoadOp::eDontCare,
+        vk::AttachmentStoreOp::eDontCare, vk::ImageLayout::eUndefined,
+        vk::ImageLayout::eColorAttachmentOptimal);
+
+    vk::AttachmentDescription depth_attachment(
+        vk::AttachmentDescriptionFlags(), FindDepthFormat(physical_device_), msaa_samples_,
+        vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eDontCare,
+        vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eDontCare,
+        vk::ImageLayout::eUndefined,
+        vk::ImageLayout::eDepthStencilAttachmentOptimal);
+
+    vk::AttachmentDescription color_attachment_resolve(
+        vk::AttachmentDescriptionFlags(), swapchain_->GetImageFormat().format,
+        vk::SampleCountFlagBits::e1, vk::AttachmentLoadOp::eDontCare,
+        vk::AttachmentStoreOp::eStore, vk::AttachmentLoadOp::eDontCare,
+        vk::AttachmentStoreOp::eDontCare, vk::ImageLayout::eUndefined,
+        vk::ImageLayout::eColorAttachmentOptimal);
+
+    vk::AttachmentReference color_attachment_ref(
+        0, vk::ImageLayout::eColorAttachmentOptimal);
+
+    vk::AttachmentReference depth_attachment_ref(
+        1, vk::ImageLayout::eDepthStencilAttachmentOptimal);
+
+    vk::AttachmentReference color_attachment_resolve_ref(
+        2, vk::ImageLayout::eColorAttachmentOptimal);
+
+    vk::SubpassDescription subpass(
+        vk::SubpassDescriptionFlags(), vk::PipelineBindPoint::eGraphics, {},
+        color_attachment_ref, color_attachment_resolve_ref,
+        &depth_attachment_ref, {});
+
+    vk::SubpassDependency dependency(
+        VK_SUBPASS_EXTERNAL, 0,
+        vk::PipelineStageFlagBits::eColorAttachmentOutput |
+            vk::PipelineStageFlagBits::eEarlyFragmentTests,
+        vk::PipelineStageFlagBits::eColorAttachmentOutput |
+            vk::PipelineStageFlagBits::eEarlyFragmentTests,
+        vk::AccessFlagBits{0},
+        vk::AccessFlagBits::eColorAttachmentWrite |
+            vk::AccessFlagBits::eDepthStencilAttachmentWrite);
+
+    std::array<vk::AttachmentDescription, 3> attachments = {
+        {color_attachment, depth_attachment, color_attachment_resolve}};
+
+    vk::RenderPassCreateInfo render_pass_info(vk::RenderPassCreateFlags(),
+                                              attachments, subpass, dependency);
+
+    return device_.createRenderPass(render_pass_info);
+}
+
+vk::DescriptorSetLayout RendererState::CreateDescriptorSetLayout()
+{
+    vk::DescriptorSetLayoutBinding ubo_layout_binding(
+        0, vk::DescriptorType::eUniformBuffer, 1,
+        vk::ShaderStageFlagBits::eVertex);
+
+    vk::DescriptorSetLayoutBinding sampler_layout_binding(
+        1, vk::DescriptorType::eCombinedImageSampler, 1,
+        vk::ShaderStageFlagBits::eFragment);
+
+    std::array<vk::DescriptorSetLayoutBinding, 2> bindings = {
+        ubo_layout_binding, sampler_layout_binding};
+
+    vk::DescriptorSetLayoutCreateInfo layout_info(
+        vk::DescriptorSetLayoutCreateFlags(), bindings);
+
+    return device_.createDescriptorSetLayout(layout_info);
 }

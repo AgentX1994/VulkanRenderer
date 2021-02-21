@@ -4,8 +4,7 @@
 
 #include "renderer_state.h"
 
-Texture::Texture(RendererState& renderer,
-                 std::string texture_path)
+Texture::Texture(RendererState& renderer, std::string texture_path)
     : device_(renderer.GetDevice()), image_(renderer.GetDevice())
 {
     int texture_width, texture_height, texture_channels;
@@ -18,13 +17,11 @@ Texture::Texture(RendererState& renderer,
         throw std::runtime_error("failed to load texture image");
     }
 
-    uint32_t mip_levels =
-        static_cast<uint32_t>(
-            std::floor(std::log2(std::max(texture_width, texture_height)))) +
-        1;
+    mip_levels_ = static_cast<uint32_t>(std::floor(
+                      std::log2(std::max(texture_width, texture_height)))) +
+                  1;
 
-    image_.SetData(renderer,
-                   texture_width, texture_height, pixels, mip_levels,
+    image_.SetData(renderer, texture_width, texture_height, pixels, mip_levels_,
                    vk::SampleCountFlagBits::e1, vk::Format::eR8G8B8A8Srgb,
                    vk::ImageTiling::eOptimal,
                    vk::ImageUsageFlagBits::eTransferSrc |
@@ -39,13 +36,12 @@ Texture::Texture(RendererState& renderer,
     //                         vk::ImageLayout::eTransferDstOptimal,
     //                         vk::ImageLayout::eShaderReadOnlyOptimal,
     //                         mip_levels_);
-    GenerateMipMaps(renderer,
-                    image_.GetImage(), vk::Format::eR8G8B8A8Srgb, texture_width,
-                    texture_height, mip_levels);
+    GenerateMipMaps(renderer, image_.GetImage(), vk::Format::eR8G8B8A8Srgb,
+                    texture_width, texture_height, mip_levels_);
 
     image_view_ =
         CreateImageView(renderer, image_.GetImage(), vk::Format::eR8G8B8A8Srgb,
-                        vk::ImageAspectFlagBits::eColor, mip_levels);
+                        vk::ImageAspectFlagBits::eColor, mip_levels_);
 }
 
 Texture::Texture(Texture&& other)
@@ -66,6 +62,8 @@ Texture::~Texture() { device_.destroyImageView(image_view_); }
 vk::Image Texture::GetImage() { return image_.GetImage(); }
 
 vk::ImageView Texture::GetImageView() { return image_view_; }
+
+uint32_t Texture::GetMipLevels() { return mip_levels_; }
 
 void Texture::MoveFrom(Texture&& other)
 {

@@ -1,10 +1,7 @@
 #pragma once
 
 #include <map>
-#include <optional>
-
-#define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
-#include <vulkan/vulkan.hpp>
+#include <string>
 
 #include "texture.h"
 
@@ -18,6 +15,8 @@ public:
     
     const Texture* GetTextureByPath(std::string path);
 
+    void Clear();
+    
 private:
     std::map<std::string, Texture> texture_map_;
 };

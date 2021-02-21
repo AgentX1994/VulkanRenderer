@@ -21,6 +21,7 @@ public:
 
     vk::Image GetImage();
     vk::ImageView GetImageView();
+    uint32_t GetMipLevels();
 
 private:
     void MoveFrom(Texture&& other);
@@ -28,4 +29,5 @@ private:
 
     GpuImage image_;
     vk::ImageView image_view_;
+    uint32_t mip_levels_;
 };

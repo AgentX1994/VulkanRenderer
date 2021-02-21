@@ -374,3 +374,38 @@ bool HasStencilComponent(vk::Format format)
     return format == vk::Format::eD32SfloatS8Uint ||
            format == vk::Format::eD24UnormS8Uint;
 }
+
+vk::Format FindSupportedFormat(vk::PhysicalDevice& physical_device,
+    const std::vector<vk::Format>& candidates, vk::ImageTiling tiling,
+    vk::FormatFeatureFlags features)
+{
+    for (auto format : candidates) {
+        auto props = physical_device.getFormatProperties(format);
+        switch (tiling) {
+            case vk::ImageTiling::eLinear:
+                if ((props.linearTilingFeatures & features) == features) {
+                    return format;
+                }
+                break;
+            case vk::ImageTiling::eOptimal:
+                if ((props.optimalTilingFeatures & features) == features) {
+                    return format;
+                }
+                break;
+            case vk::ImageTiling::eDrmFormatModifierEXT:
+                // TODO What is this
+                break;
+        }
+    }
+
+    throw std::runtime_error("failed to find supported format!");
+}
+
+vk::Format FindDepthFormat(vk::PhysicalDevice& physical_device)
+{
+    return FindSupportedFormat(physical_device, 
+        {vk::Format::eD32Sfloat, vk::Format::eD32SfloatS8Uint,
+         vk::Format::eD24UnormS8Uint},
+        vk::ImageTiling::eOptimal,
+        vk::FormatFeatureFlagBits::eDepthStencilAttachment);
+}

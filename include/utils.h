@@ -56,3 +56,9 @@ void GenerateMipMaps(RendererState& renderer, vk::Image image,
                      int32_t texture_height, uint32_t mip_levels);
 
 bool HasStencilComponent(vk::Format format);
+
+vk::Format FindSupportedFormat(vk::PhysicalDevice& physical_device,
+    const std::vector<vk::Format>& candidates, vk::ImageTiling tiling,
+    vk::FormatFeatureFlags features);
+
+vk::Format FindDepthFormat(vk::PhysicalDevice& physical_device);

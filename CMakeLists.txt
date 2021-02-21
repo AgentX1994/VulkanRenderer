@@ -30,13 +30,17 @@ add_executable(VulkanTest
   src/vertex.cpp
   src/mesh.cpp
   src/model.cpp
+  src/material.cpp
   src/texture.cpp
+  src/material_cache.cpp
   src/texture_cache.cpp
+  src/swapchain.cpp
   src/renderer_state.cpp
   src/gpu_buffer.cpp
   src/gpu_image.cpp
   src/stb_image.cpp
   src/tiny_obj_loader.cpp)
+  
 target_include_directories(VulkanTest
 PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
