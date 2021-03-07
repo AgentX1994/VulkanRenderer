@@ -10,6 +10,17 @@ Material::Material(RendererState& renderer,
     : device_(renderer.GetDevice()), material_(material_defintion)
 {
     std::tie(pipeline_layout_, pipeline_) = CreateGraphicsPipeline(renderer);
+    if (material_.diffuse_texname.size() > 0) {
+        renderer.GetTextureCache().LoadTexture(renderer,
+                                               material_.diffuse_texname);
+        texture_ = renderer.GetTextureCache().GetTextureByPath(
+            material_.diffuse_texname);
+    }
+
+    if (texture_) {
+        CreateSampler(renderer);
+        CreateDescriptorSet(renderer);
+    }
 }
 
 Material::Material(Material&& other) : device_(other.device_)
@@ -26,23 +37,40 @@ Material& Material::operator=(Material&& other)
 
 Material::~Material() { Cleanup(); }
 
+void Material::RecreatePipeline(RendererState& renderer)
+{
+    CleanupPipeline();
+    std::tie(pipeline_layout_, pipeline_) = CreateGraphicsPipeline(renderer);
+}
+
 vk::PipelineLayout& Material::GetGraphicsPipelineLayout()
 {
     return pipeline_layout_;
 }
 
-vk::Pipeline& Material::GetGraphicsPipeline()
+vk::Pipeline& Material::GetGraphicsPipeline() { return pipeline_; }
+
+NonOwningPointer<Texture> Material::GetTexture() { return texture_; }
+vk::DescriptorSet& Material::GetDescriptorSet()
 {
-    return pipeline_;
+    return material_descriptor_set_;
 }
 
-void Material::Cleanup()
+void Material::CleanupPipeline()
 {
     if (pipeline_layout_) {
         device_.destroyPipelineLayout(pipeline_layout_);
     }
     if (pipeline_) {
         device_.destroyPipeline(pipeline_);
+    }
+}
+
+void Material::Cleanup()
+{
+    CleanupPipeline();
+    if (sampler_) {
+        device_.destroySampler(sampler_);
     }
 }
 
@@ -54,6 +82,11 @@ void Material::MoveFrom(Material&& other)
     pipeline_ = std::move(other.pipeline_);
     other.pipeline_ = (VkPipeline)VK_NULL_HANDLE;
     material_ = std::move(other.material_);
+    material_descriptor_set_ = std::move(other.material_descriptor_set_);
+    other.material_descriptor_set_ = (VkDescriptorSet)VK_NULL_HANDLE;
+    texture_ = std::move(other.texture_);
+    sampler_ = std::move(other.sampler_);
+    other.sampler_ = (VkSampler)VK_NULL_HANDLE;
 }
 
 std::pair<vk::PipelineLayout, vk::Pipeline> Material::CreateGraphicsPipeline(
@@ -125,10 +158,18 @@ std::pair<vk::PipelineLayout, vk::Pipeline> Material::CreateGraphicsPipeline(
     vk::PipelineDynamicStateCreateInfo dynamic_state(
         vk::PipelineDynamicStateCreateFlags(), dynamic_states);
 
+    std::vector<vk::DescriptorSetLayout> layouts = {
+        renderer.GetCameraDescriptorSetLayout(),
+        renderer.GetObjectDescriptorSetLayout()};
+
+    if (material_.diffuse_texname.size() > 0) {
+        layouts.push_back(renderer.GetMaterialDescriptorSetLayout());
+    }
+
     vk::PipelineLayoutCreateInfo pipeline_layout_info(
         vk::PipelineLayoutCreateFlags(),
-        renderer.GetDescriptorSetLayout(),  // Set layouts
-        {}                                  // Push constant ranges
+        layouts,  // Set layouts
+        {}        // Push constant ranges
     );
 
     auto pipeline_layout =
@@ -167,4 +208,37 @@ vk::ShaderModule Material::CreateShaderModule(const std::vector<uint32_t>& code)
                                            code);
 
     return device_.createShaderModule(create_info);
+}
+
+void Material::CreateSampler(RendererState& renderer)
+{
+    auto properties = renderer.GetPhysicalDevice().getProperties();
+    vk::SamplerCreateInfo sampler_info(
+        vk::SamplerCreateFlags(), vk::Filter::eLinear, vk::Filter::eLinear,
+        vk::SamplerMipmapMode::eLinear, vk::SamplerAddressMode::eRepeat,
+        vk::SamplerAddressMode::eRepeat, vk::SamplerAddressMode::eRepeat, 0.0f,
+        VK_TRUE, properties.limits.maxSamplerAnisotropy, VK_FALSE,
+        vk::CompareOp::eAlways, 0.0f,
+        static_cast<float>(texture_->GetMipLevels()),
+        vk::BorderColor::eIntOpaqueBlack, VK_FALSE);
+
+    sampler_ = device_.createSampler(sampler_info);
+}
+
+void Material::CreateDescriptorSet(RendererState& renderer)
+{
+    std::vector<vk::DescriptorSetLayout> layouts(
+        1, renderer.GetMaterialDescriptorSetLayout());
+    vk::DescriptorSetAllocateInfo alloc_info(renderer.GetDescriptorPool(),
+                                             layouts);
+    material_descriptor_set_ = device_.allocateDescriptorSets(alloc_info)[0];
+
+    vk::DescriptorImageInfo image_info(sampler_, texture_->GetImageView(),
+                                       vk::ImageLayout::eShaderReadOnlyOptimal);
+
+    vk::WriteDescriptorSet descriptor_write(
+        material_descriptor_set_, 0, 0,
+        vk::DescriptorType::eCombinedImageSampler, image_info);
+
+    device_.updateDescriptorSets(descriptor_write, {});
 }

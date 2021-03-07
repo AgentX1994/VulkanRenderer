@@ -3,8 +3,8 @@
 #include <shaderc/shaderc.hpp>
 #include <string>
 
-#define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
-#include <vulkan/vulkan.hpp>
+#include "common.h"
+#include "common_vulkan.h"
 
 class RendererState;
 

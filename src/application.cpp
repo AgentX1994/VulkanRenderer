@@ -1,5 +1,7 @@
 #include "application.h"
 
+#include <fontconfig/fontconfig.h>
+
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -7,15 +9,11 @@
 #include <limits>
 #include <unordered_map>
 
-#define GLM_FORCE_RADIANS
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE
-#include <fontconfig/fontconfig.h>
-
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_vulkan.h"
+#include "camera.h"
+#include "common.h"
+#include "common_vulkan.h"
 #include "imgui.h"
 #include "stb_image.h"
 #include "swapchain.h"
@@ -110,14 +108,10 @@ void Application::InitVulkan()
 {
     CreateRenderer();
     // SetupDebugMessenger();
-    CreateTextureImage();
-    CreateTextureSampler();
-    LoadModel();
-    CreateUniformBuffers();
-    CreateDescriptorPool();
-    CreateDescriptorSets();
+    LoadScene();
+    CreateFrameData();
+    CreateCameraDescriptorSets();
     CreateCommandBuffers();
-    CreateSyncObjects();
 }
 
 void Application::MainLoop()
@@ -145,17 +139,20 @@ void Application::Cleanup()
 
     CleanupSwapChain();
 
+    render_objects_.clear();
+
     renderer_->GetDevice().destroyCommandPool(imgui_command_pool_);
     renderer_->GetDevice().destroyRenderPass(imgui_render_pass_);
     renderer_->GetDevice().destroyDescriptorPool(imgui_descriptor_pool_);
 
-    texture_image_.reset();
-    renderer_->GetDevice().destroySampler(texture_sampler_);
-
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-        renderer_->GetDevice().destroySemaphore(render_finished_semaphore_[i]);
-        renderer_->GetDevice().destroySemaphore(image_available_semaphore_[i]);
-        renderer_->GetDevice().destroyFence(in_flight_fences_[i]);
+        auto& frame_data = frame_data_[i];
+        frame_data.camera_uniform_buffer.reset();
+        renderer_->GetDevice().destroySemaphore(
+            frame_data.render_finished_semaphore);
+        renderer_->GetDevice().destroySemaphore(
+            frame_data.image_available_semaphore);
+        renderer_->GetDevice().destroyFence(frame_data.in_flight_fence);
     }
     if constexpr (ENABLE_VALIDATION_LAYERS) {
         // instance_.destroyDebugUtilsMessengerEXT(debug_messenger_);
@@ -243,38 +240,9 @@ void Application::CreateCommandBuffers()
 
     command_buffers_ =
         renderer_->GetDevice().allocateCommandBuffers(alloc_info);
-
-    auto& framebuffers = renderer_->GetFramebuffers();
-
-    for (size_t i = 0; i < command_buffers_.size(); ++i) {
-        vk::CommandBufferBeginInfo begin_info(vk::CommandBufferUsageFlags(),
-                                              {});
-
-        command_buffers_[i].begin(begin_info);
-
-        std::array<vk::ClearValue, 2> clear_values;
-        clear_values[0].color.setFloat32({{0.0f, 0.0f, 0.0f, 0.0f}});
-        clear_values[1].depthStencil.setDepth(1.0f);
-        clear_values[1].depthStencil.setStencil(0);
-
-        vk::RenderPassBeginInfo render_pass_info(
-            renderer_->GetRenderPass(), framebuffers[i],
-            {{0, 0}, renderer_->GetSwapchain().GetExtent()}, clear_values);
-
-        command_buffers_[i].beginRenderPass(render_pass_info,
-                                            vk::SubpassContents::eInline);
-
-
-        for (auto& model : models_) {
-            model.RecordDrawCommand(renderer_.value(), command_buffers_[i], descriptor_sets_[i]);
-        }
-
-        command_buffers_[i].endRenderPass();
-        command_buffers_[i].end();
-    }
 }
 
-void Application::CreateSyncObjects()
+void Application::CreateFrameData()
 {
     // Create these as empty (default) so that we can copy in_flight fences into
     // them
@@ -286,11 +254,23 @@ void Application::CreateSyncObjects()
                                               // stuck waiting for it
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-        image_available_semaphore_[i] =
+        auto& frame_data = frame_data_[i];
+
+        frame_data.camera_uniform_buffer.emplace(
+            *renderer_, sizeof(GpuCameraData),
+            vk::BufferUsageFlagBits::eUniformBuffer,
+            vk::MemoryPropertyFlagBits::eHostVisible |
+                vk::MemoryPropertyFlagBits::eHostCoherent);
+
+        // Descriptor sets are created in
+        // Application::CreateCameraDescriptorSets
+
+        frame_data.image_available_semaphore =
             renderer_->GetDevice().createSemaphore(semaphore_info);
-        render_finished_semaphore_[i] =
+        frame_data.render_finished_semaphore =
             renderer_->GetDevice().createSemaphore(semaphore_info);
-        in_flight_fences_[i] = renderer_->GetDevice().createFence(fence_info);
+        frame_data.in_flight_fence =
+            renderer_->GetDevice().createFence(fence_info);
     }
 }
 
@@ -298,7 +278,7 @@ void Application::DrawFrame()
 {
     // Wait until this fence has been finished
     auto wait_for_fence_result = renderer_->GetDevice().waitForFences(
-        in_flight_fences_[current_frame_], VK_TRUE,
+        frame_data_[current_frame_].in_flight_fence, VK_TRUE,
         std::numeric_limits<uint64_t>::max());
     if (wait_for_fence_result != vk::Result::eSuccess) {
         throw std::runtime_error("Could not wait for fence!");
@@ -309,7 +289,7 @@ void Application::DrawFrame()
     try {
         result = renderer_->GetSwapchain().GetNextImage(
             std::numeric_limits<uint64_t>::max(),
-            image_available_semaphore_[current_frame_], {});
+            frame_data_[current_frame_].image_available_semaphore, {});
     } catch (vk::SystemError& e) {
         if (e.code() == vk::Result::eErrorOutOfDateKHR) {
             RecreateSwapChain();
@@ -341,9 +321,14 @@ void Application::DrawFrame()
         }
     }
 
-    images_in_flight_[image_index] = in_flight_fences_[current_frame_];
+    images_in_flight_[image_index] =
+        frame_data_[current_frame_].in_flight_fence;
 
-    UpdateUniformBuffer(image_index);
+    UpdateCameraBuffer();
+
+    DrawScene(frame_data_[current_frame_],
+              renderer_->GetFramebuffers()[image_index],
+              command_buffers_[image_index]);
 
     vk::PipelineStageFlags wait_dest_stage_mask =
         vk::PipelineStageFlagBits::eColorAttachmentOutput;
@@ -354,9 +339,13 @@ void Application::DrawFrame()
     if (ImGui::Begin("Stats", &imgui_display_)) {
         uint32_t vertex_count = 0;
         uint32_t tri_count = 0;
-        for (auto& model : models_) {
-            vertex_count += model.GetVertexCount();
-            tri_count += model.GetTriangleCount();
+        for (auto& obj : render_objects_) {
+            auto model = obj.GetModel();
+            if (!model) {
+                continue;
+            }
+            vertex_count += model->GetVertexCount();
+            tri_count += model->GetTriangleCount();
         }
         ImGui::Text("%u vertices", vertex_count);
         ImGui::Text("%u triangles", tri_count);
@@ -416,18 +405,21 @@ void Application::DrawFrame()
     std::array<vk::CommandBuffer, 2> command_buffers_to_submit = {
         {command_buffers_[image_index], imgui_command_buffers_[image_index]}};
 
-    vk::SubmitInfo submit_info(image_available_semaphore_[current_frame_],
-                               wait_dest_stage_mask, command_buffers_to_submit,
-                               render_finished_semaphore_[current_frame_]);
+    vk::SubmitInfo submit_info(
+        frame_data_[current_frame_].image_available_semaphore,
+        wait_dest_stage_mask, command_buffers_to_submit,
+        frame_data_[current_frame_].render_finished_semaphore);
 
-    renderer_->GetDevice().resetFences(in_flight_fences_[current_frame_]);
+    renderer_->GetDevice().resetFences(
+        frame_data_[current_frame_].in_flight_fence);
 
-    renderer_->GetGraphicsQueue().submit(submit_info,
-                                         in_flight_fences_[current_frame_]);
+    renderer_->GetGraphicsQueue().submit(
+        submit_info, frame_data_[current_frame_].in_flight_fence);
 
     auto swapchain = renderer_->GetSwapchain().GetSwapchain();
-    vk::PresentInfoKHR present_info(render_finished_semaphore_[current_frame_],
-                                    swapchain, image_index, {});
+    vk::PresentInfoKHR present_info(
+        frame_data_[current_frame_].render_finished_semaphore, swapchain,
+        image_index, {});
 
     vk::Result present_result = vk::Result::eSuccess;
     try {
@@ -453,6 +445,70 @@ void Application::DrawFrame()
     current_frame_ = (current_frame_ + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
+void Application::DrawScene(FrameData& frame_data, vk::Framebuffer& framebuffer,
+                            vk::CommandBuffer& command_buffer)
+{
+    vk::CommandBufferBeginInfo begin_info(vk::CommandBufferUsageFlags(), {});
+
+    command_buffer.begin(begin_info);
+
+    std::array<vk::ClearValue, 2> clear_values;
+    clear_values[0].color.setFloat32({{0.0f, 0.0f, 0.0f, 0.0f}});
+    clear_values[1].depthStencil.setDepth(1.0f);
+    clear_values[1].depthStencil.setStencil(0);
+
+    vk::RenderPassBeginInfo render_pass_info(
+        renderer_->GetRenderPass(), framebuffer,
+        {{0, 0}, renderer_->GetSwapchain().GetExtent()}, clear_values);
+
+    command_buffer.beginRenderPass(render_pass_info,
+                                   vk::SubpassContents::eInline);
+
+    NonOwningPointer<Material> last_material = nullptr;
+    for (auto& obj : render_objects_) {
+        auto model = obj.GetModel();
+        auto material_name = model->GetMaterialName();
+        auto material =
+            renderer_->GetMaterialCache().GetMaterialByName(material_name);
+        if (material == nullptr) {
+            std::cerr << "Warning: material \"" << material_name
+                      << "\" does not exist!\n";
+            continue;
+        }
+        if (last_material != material) {
+            command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics,
+                                        material->GetGraphicsPipeline());
+            // Bind camera
+            command_buffer.bindDescriptorSets(
+                vk::PipelineBindPoint::eGraphics,
+                material->GetGraphicsPipelineLayout(), 0,
+                frame_data.camera_uniform_descriptor, {});
+
+            // Bind texture
+            command_buffer.bindDescriptorSets(
+                vk::PipelineBindPoint::eGraphics,
+                material->GetGraphicsPipelineLayout(), 2,
+                material->GetDescriptorSet(), {});
+        }
+
+        // bind object properties
+        command_buffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+                                          material->GetGraphicsPipelineLayout(),
+                                          1, obj.GetDescriptorSet(), {});
+
+        for (auto& mesh : model->GetMeshes()) {
+            command_buffer.bindVertexBuffers(0, mesh.GetVertexBuffer(), {0});
+            command_buffer.bindIndexBuffer(mesh.GetIndexBuffer(), 0,
+                                           vk::IndexType::eUint32);
+            command_buffer.drawIndexed(mesh.GetTriangleCount() * 3u, 1, 0, 0,
+                                       0);
+        }
+    }
+
+    command_buffer.endRenderPass();
+    command_buffer.end();
+}
+
 void Application::CleanupSwapChain()
 {
     for (auto framebuffer : imgui_frame_buffers_) {
@@ -463,8 +519,6 @@ void Application::CleanupSwapChain()
 
     uniform_buffers_.clear();
 
-    renderer_->GetDevice().destroyDescriptorPool(descriptor_pool_);
-
     renderer_->GetDevice().freeCommandBuffers(
         renderer_->GetGraphicsCommandPool(), command_buffers_);
 }
@@ -473,9 +527,8 @@ void Application::RecreateSwapChain()
 {
     renderer_->RecreateSwapchain(window_);
 
-    CreateUniformBuffers();
-    CreateDescriptorPool();
-    CreateDescriptorSets();
+    CleanupSwapChain();
+
     CreateCommandBuffers();
 
     ImGui_ImplVulkan_SetMinImageCount(
@@ -484,116 +537,85 @@ void Application::RecreateSwapChain()
     CreateImGuiFramebuffers();
 }
 
-void Application::CreateUniformBuffers()
-{
-    vk::DeviceSize buffer_size = sizeof(UniformBufferObject);
-
-    for (size_t i = 0; i < renderer_->GetSwapchain().GetActualImageCount();
-         ++i) {
-        uniform_buffers_.emplace_back(
-            renderer_.value(), buffer_size,
-            vk::BufferUsageFlagBits::eUniformBuffer,
-            vk::MemoryPropertyFlagBits::eHostVisible |
-                vk::MemoryPropertyFlagBits::eHostCoherent);
-    }
-}
-
-void Application::UpdateUniformBuffer(uint32_t index)
+void Application::UpdateCameraBuffer()
 {
     auto extent = renderer_->GetSwapchain().GetExtent();
-    UniformBufferObject ubo{};
-    ubo.model = glm::rotate(glm::mat4(1.0f),
-                            glm::radians(current_model_rotation_degrees_),
-                            glm::vec3(0.0f, 0.0f, 1.0f));
-    ubo.view =
-        glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f),
-                    glm::vec3(0.0f, 0.0f, 1.0f));
-    ubo.proj = glm::perspective(
+    GpuCameraData camera{};
+    auto pos = glm::vec3(3.0f * glm::cos(glm::radians(current_model_rotation_degrees_)),
+                         3.0f * glm::sin(glm::radians(current_model_rotation_degrees_)), 2.0f);
+    camera.view = glm::lookAt(pos, glm::vec3(0.0f, 0.0f, 0.0f),
+                              glm::vec3(0.0f, 0.0f, 1.0f));
+    camera.proj = glm::perspective(
         glm::radians(45.0f), extent.width / (float)extent.height, 0.1f, 10.0f);
     // compensate for incorect y coordinate in clipping space (OpenGL has it
     // flipped compared to Vulkan)
-    ubo.proj[1][1] *= -1;
+    camera.proj[1][1] *= -1;
+    camera.viewproj = camera.proj * camera.view;
+
+    auto& frame_data = frame_data_[current_frame_];
 
     void* data = renderer_->GetDevice().mapMemory(
-        uniform_buffers_[index].GetMemory(), 0, sizeof(ubo));
-    memcpy(data, &ubo, sizeof(ubo));
-    renderer_->GetDevice().unmapMemory(uniform_buffers_[index].GetMemory());
+        frame_data.camera_uniform_buffer->GetMemory(), 0, sizeof(camera));
+    memcpy(data, &camera, sizeof(GpuCameraData));
+    renderer_->GetDevice().unmapMemory(
+        frame_data.camera_uniform_buffer->GetMemory());
 }
 
-void Application::CreateDescriptorPool()
-{
-    std::array<vk::DescriptorPoolSize, 2> pool_sizes = {
-        {{vk::DescriptorType::eUniformBuffer,
-          static_cast<uint32_t>(
-              renderer_->GetSwapchain().GetActualImageCount())},
-         {vk::DescriptorType::eCombinedImageSampler,
-          static_cast<uint32_t>(
-              renderer_->GetSwapchain().GetActualImageCount())}}};
-
-    vk::DescriptorPoolCreateInfo pool_info(
-        vk::DescriptorPoolCreateFlags(),
-        static_cast<uint32_t>(renderer_->GetSwapchain().GetActualImageCount()),
-        pool_sizes);
-
-    descriptor_pool_ = renderer_->GetDevice().createDescriptorPool(pool_info);
-}
-
-void Application::CreateDescriptorSets()
+void Application::CreateCameraDescriptorSets()
 {
     std::vector<vk::DescriptorSetLayout> layouts(
-        renderer_->GetSwapchain().GetActualImageCount(),
-        renderer_->GetDescriptorSetLayout());
-    vk::DescriptorSetAllocateInfo alloc_info(descriptor_pool_, layouts);
+        MAX_FRAMES_IN_FLIGHT, renderer_->GetCameraDescriptorSetLayout());
+    vk::DescriptorSetAllocateInfo alloc_info(renderer_->GetDescriptorPool(),
+                                             layouts);
 
-    descriptor_sets_ =
+    auto camera_descriptor_sets =
         renderer_->GetDevice().allocateDescriptorSets(alloc_info);
 
-    for (size_t i = 0; i < renderer_->GetSwapchain().GetActualImageCount();
-         ++i) {
-        vk::DescriptorBufferInfo buffer_info(uniform_buffers_[i].GetBuffer(), 0,
-                                             sizeof(UniformBufferObject));
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        auto& frame_data = frame_data_[i];
+        frame_data.camera_uniform_descriptor = camera_descriptor_sets[i];
 
-        vk::DescriptorImageInfo image_info(
-            texture_sampler_, texture_image_->GetImageView(),
-            vk::ImageLayout::eShaderReadOnlyOptimal);
+        // now write to the descriptor set
+        vk::DescriptorBufferInfo buffer_info(
+            frame_data.camera_uniform_buffer->GetBuffer(), 0,
+            sizeof(GpuCameraData));
 
-        std::array<vk::WriteDescriptorSet, 2> descriptor_writes = {
-            {{descriptor_sets_[i],
+        std::array<vk::WriteDescriptorSet, 1> descriptor_writes = {
+            {{frame_data.camera_uniform_descriptor,
               0,
               0,
               vk::DescriptorType::eUniformBuffer,
               {},
-              buffer_info},
-             {descriptor_sets_[i], 1, 0,
-              vk::DescriptorType::eCombinedImageSampler, image_info}}};
+              buffer_info}}};
 
         renderer_->GetDevice().updateDescriptorSets(descriptor_writes, {});
     }
 }
 
-void Application::CreateTextureImage()
-{
-    texture_image_.emplace(renderer_.value(), TEXTURE_PATH);
-}
-
-void Application::CreateTextureSampler()
-{
-    auto properties = renderer_->GetPhysicalDevice().getProperties();
-    vk::SamplerCreateInfo sampler_info(
-        vk::SamplerCreateFlags(), vk::Filter::eLinear, vk::Filter::eLinear,
-        vk::SamplerMipmapMode::eLinear, vk::SamplerAddressMode::eRepeat,
-        vk::SamplerAddressMode::eRepeat, vk::SamplerAddressMode::eRepeat, 0.0f,
-        VK_TRUE, properties.limits.maxSamplerAnisotropy, VK_FALSE,
-        vk::CompareOp::eAlways, 0.0f, static_cast<float>(texture_image_->GetMipLevels()),
-        vk::BorderColor::eIntOpaqueBlack, VK_FALSE);
-
-    texture_sampler_ = renderer_->GetDevice().createSampler(sampler_info);
-}
-
-void Application::LoadModel()
+void Application::LoadScene()
 {
     for (const auto& path : MODEL_PATHS) {
-        models_.push_back(Model(renderer_.value(), path));
+        models_.emplace_back(renderer_.value(), path);
+    }
+
+    NonOwningPointer<SceneNode> root = scene_graph_.GetRoot();
+
+    {
+        render_objects_.emplace_back(*renderer_);
+        auto& obj1 = render_objects_.back();
+        auto scene_node1 = root->CreateChildNode();
+        scene_node1->SetTranslation(glm::vec3(-1.0, 0.0, 0.0));
+        obj1.SetModel(&models_.front());
+        scene_node1->SetRenderObject(&obj1);
+    }
+
+    {
+        render_objects_.emplace_back(*renderer_);
+        auto& obj2 = render_objects_.back();
+        auto scene_node2 = root->CreateChildNode();
+        scene_node2->SetTranslation(glm::vec3(1.0, 0.0, 0.0));
+        obj2.SetModel(&models_.front());
+        scene_node2->SetRenderObject(&obj2);
     }
 }
 
@@ -665,7 +687,8 @@ void Application::SetupImgui()
     // Create imgui render pass
     {
         vk::AttachmentDescription attachment(
-            vk::AttachmentDescriptionFlags(), renderer_->GetSwapchain().GetImageFormat().format,
+            vk::AttachmentDescriptionFlags(),
+            renderer_->GetSwapchain().GetImageFormat().format,
             vk::SampleCountFlagBits::e1, vk::AttachmentLoadOp::eLoad,
             vk::AttachmentStoreOp::eStore, vk::AttachmentLoadOp::eDontCare,
             vk::AttachmentStoreOp::eDontCare,

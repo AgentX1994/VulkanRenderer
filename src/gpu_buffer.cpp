@@ -44,6 +44,6 @@ void GpuBuffer::MoveFrom(GpuBuffer&& other)
     other.memory_ = (VkDeviceMemory)VK_NULL_HANDLE;
 }
 
-vk::Buffer GpuBuffer::GetBuffer() { return buffer_; }
+vk::Buffer GpuBuffer::GetBuffer() const { return buffer_; }
 
-vk::DeviceMemory GpuBuffer::GetMemory() { return memory_; }
+vk::DeviceMemory GpuBuffer::GetMemory() const { return memory_; }

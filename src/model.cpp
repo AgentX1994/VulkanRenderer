@@ -27,35 +27,11 @@ Model::Model(RendererState& renderer, std::string path)
     materials_ = reader.GetMaterials();
 
     for (const auto& shape : shapes) {
-        static_assert(std::is_move_constructible_v<Mesh>);
-        Mesh mesh(renderer, attrib, shape);
-        meshes_.emplace_back(std::move(mesh));
-        // meshes_.emplace_back(physical_device, device, transient_command_pool,
-        // queue,
-        //           attrib, shape);
+        meshes_.emplace_back(renderer, attrib, shape);
     }
 
     for (auto mat : materials_) {
         renderer.GetMaterialCache().LoadMaterial(renderer, mat.name, mat);
-    }
-}
-
-void Model::RecordDrawCommand(
-    RendererState& renderer, vk::CommandBuffer& command_buffer,
-    /* temporary */ vk::DescriptorSet descriptor_set)
-{
-    Material* material =
-        renderer.GetMaterialCache().GetMaterialByName(materials_[0].name);
-    if (material != nullptr) {
-        command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics,
-                                    material->GetGraphicsPipeline());
-
-        command_buffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
-                                          material->GetGraphicsPipelineLayout(),
-                                          0, descriptor_set, {});
-    }
-    for (auto& mesh : meshes_) {
-        mesh.RecordDrawCommand(command_buffer);
     }
 }
 
@@ -77,4 +53,14 @@ uint32_t Model::GetTriangleCount()
     }
 
     return count;
+}
+
+const std::vector<Mesh>& Model::GetMeshes()
+{
+    return meshes_;
+}
+
+const std::string& Model::GetMaterialName()
+{
+    return materials_[0].name;
 }

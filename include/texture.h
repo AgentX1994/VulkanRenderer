@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common.h"
+
 #include "gpu_image.h"
 #include "stb_image.h"
 

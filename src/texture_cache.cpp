@@ -9,7 +9,7 @@ void TextureCache::LoadTexture(RendererState& renderer, std::string path)
     }
 }
 
-const Texture* TextureCache::GetTextureByPath(std::string path) {
+Texture* TextureCache::GetTextureByPath(std::string path) {
     if (texture_map_.find(path) != texture_map_.end())
     {
         return &texture_map_.at(path);

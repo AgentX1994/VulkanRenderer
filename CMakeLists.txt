@@ -30,6 +30,9 @@ add_executable(VulkanTest
   src/vertex.cpp
   src/mesh.cpp
   src/model.cpp
+  src/scene_graph.cpp
+  src/scene_node.cpp
+  src/render_object.cpp
   src/material.cpp
   src/texture.cpp
   src/material_cache.cpp

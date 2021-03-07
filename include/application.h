@@ -3,48 +3,25 @@
 #include <array>
 #include <optional>
 
-#define GLFW_INCLUDE_VULKAN
-#include <GLFW/glfw3.h>
-
-#define GLM_FORCE_RADIANS
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE
-#include <glm/mat4x4.hpp>
-#include <glm/vec4.hpp>
-#include <shaderc/shaderc.hpp>
-
-#define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
-#include <vulkan/vulkan.hpp>
+#include "common.h"
+#include "common_vulkan.h"
 
 #include "imgui.h"
 #include "vertex.h"
 #include "model.h"
 #include "texture.h"
-
-struct QueueFamilyInfo
-{
-    uint32_t index;
-    vk::QueueFamilyProperties properties;
-};
-
-struct QueueFamilyIndices
-{
-    std::optional<QueueFamilyInfo> graphics_family;
-    std::optional<QueueFamilyInfo> present_family;
-
-    inline bool IsComplete()
-    {
-        return graphics_family.has_value() && present_family.has_value();
-    }
-};
-
-struct SwapChainSupportDetails
-{
-    vk::SurfaceCapabilitiesKHR capabilities;
-    std::vector<vk::SurfaceFormatKHR> formats;
-    std::vector<vk::PresentModeKHR> present_modes;
-};
+#include "scene_graph.h"
+#include "render_object.h"
 
 constexpr size_t MAX_FRAMES_IN_FLIGHT = 2;
+
+struct FrameData {
+    std::optional<GpuBuffer> camera_uniform_buffer;
+    vk::DescriptorSet camera_uniform_descriptor;
+    vk::Semaphore image_available_semaphore;
+    vk::Semaphore render_finished_semaphore;
+    vk::Fence in_flight_fence;
+};
 
 class Application
 {
@@ -66,17 +43,14 @@ private:
     
     std::vector<const char*> GetRequiredExtensions();
     void CreateCommandBuffers();
-    void CreateSyncObjects();
+    void CreateFrameData();
     void CleanupSwapChain();
     void RecreateSwapChain();
     void DrawFrame();
-    void CreateUniformBuffers();
-    void UpdateUniformBuffer(uint32_t index);
-    void CreateDescriptorPool();
-    void CreateDescriptorSets();
-    void CreateTextureImage();
-    void CreateTextureSampler();
-    void LoadModel();
+    void UpdateCameraBuffer();
+    void CreateCameraDescriptorSets();
+    void LoadScene();
+    void DrawScene(FrameData& frame_data, vk::Framebuffer& framebuffer, vk::CommandBuffer& command_buffer);
 
     void FindFontFile(std::string name);
     void CreateImGuiFramebuffers();
@@ -86,21 +60,16 @@ private:
 
     GLFWwindow* window_;
     std::optional<RendererState> renderer_;
-    vk::DescriptorPool descriptor_pool_;
-    std::vector<vk::DescriptorSet> descriptor_sets_;
 
+    SceneGraph scene_graph_;
     std::vector<Model> models_;
+    std::vector<RenderObject> render_objects_;
 
     std::vector<GpuBuffer> uniform_buffers_;
 
-    std::optional<Texture> texture_image_;
-    vk::Sampler texture_sampler_;
-
     std::vector<vk::CommandBuffer> command_buffers_;
 
-    std::array<vk::Semaphore, MAX_FRAMES_IN_FLIGHT> image_available_semaphore_;
-    std::array<vk::Semaphore, MAX_FRAMES_IN_FLIGHT> render_finished_semaphore_;
-    std::array<vk::Fence, MAX_FRAMES_IN_FLIGHT> in_flight_fences_;
+    std::array<FrameData, MAX_FRAMES_IN_FLIGHT> frame_data_;
     std::vector<vk::Fence> images_in_flight_;
 
     bool imgui_display_ = false;

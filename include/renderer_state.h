@@ -2,13 +2,8 @@
 
 #include <optional>
 
-#define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
-#include <vulkan/vulkan.hpp>
-
-// TODO Find a way to make this work with other window libraries?
-#define GLFW_INCLUDE_VULKAN
-#include <GLFW/glfw3.h>
-
+#include "common.h"
+#include "common_vulkan.h"
 #include "material_cache.h"
 #include "swapchain.h"
 #include "texture_cache.h"
@@ -56,7 +51,11 @@ public:
 
     std::vector<vk::Framebuffer>& GetFramebuffers();
 
-    vk::DescriptorSetLayout& GetDescriptorSetLayout();
+    vk::DescriptorPool& GetDescriptorPool();
+
+    vk::DescriptorSetLayout& GetCameraDescriptorSetLayout();
+    vk::DescriptorSetLayout& GetObjectDescriptorSetLayout();
+    vk::DescriptorSetLayout& GetMaterialDescriptorSetLayout();
 
     vk::ImageView& GetColorImageView();
     vk::ImageView& GetDepthImageView();
@@ -137,7 +136,11 @@ private:
 
     void CreateFramebuffers();
 
-    vk::DescriptorSetLayout CreateDescriptorSetLayout();
+    vk::DescriptorPool CreateDescriptorPool();
+
+    vk::DescriptorSetLayout CreateCameraDescriptorSetLayout();
+    vk::DescriptorSetLayout CreateObjectDescriptorSetLayout();
+    vk::DescriptorSetLayout CreateMaterialDescriptorSetLayout();
 
     vk::Instance instance_;
 
@@ -171,7 +174,11 @@ private:
 
     std::vector<vk::Framebuffer> swapchain_frame_buffers_;
 
-    vk::DescriptorSetLayout descriptor_set_layout_;
+    vk::DescriptorPool descriptor_pool_;
+
+    vk::DescriptorSetLayout camera_descriptor_set_layout_;
+    vk::DescriptorSetLayout object_descriptor_set_layout_;
+    vk::DescriptorSetLayout material_descriptor_set_layout_;
 
     vk::SampleCountFlagBits msaa_samples_ = vk::SampleCountFlagBits::e1;
 };

@@ -3,9 +3,8 @@
 #include <array>
 #include <vector>
 
-#define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
-#include <vulkan/vulkan.hpp>
-
+#include "common.h"
+#include "common_vulkan.h"
 #include "renderer_state.h"
 #include "utils.h"
 
@@ -13,12 +12,12 @@ class GpuBuffer
 {
 public:
     GpuBuffer(vk::Device& device);
-    GpuBuffer(RendererState& renderer,  vk::DeviceSize buffer_size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties);
+    GpuBuffer(RendererState& renderer, vk::DeviceSize buffer_size,
+              vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties);
 
     template <typename Container>
-    void SetData(RendererState& renderer,
-                 const Container& data, vk::BufferUsageFlags usage,
-                 vk::MemoryPropertyFlags properties)
+    void SetData(RendererState& renderer, const Container& data,
+                 vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties)
     {
         device_ = renderer.GetDevice();
         vk::DeviceSize size =
@@ -38,8 +37,8 @@ public:
 
     ~GpuBuffer();
 
-    vk::Buffer GetBuffer();
-    vk::DeviceMemory GetMemory();
+    vk::Buffer GetBuffer() const;
+    vk::DeviceMemory GetMemory() const;
 
 private:
     void Cleanup();

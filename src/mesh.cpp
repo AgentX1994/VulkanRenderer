@@ -2,8 +2,8 @@
 
 #include <unordered_map>
 
-Mesh::Mesh(RendererState& renderer,
-           const tinyobj::attrib_t attribs, const tinyobj::shape_t& shape)
+Mesh::Mesh(RendererState& renderer, const tinyobj::attrib_t attribs,
+           const tinyobj::shape_t& shape)
     : gpu_vertices_(renderer.GetDevice()),
       gpu_indices_(renderer.GetDevice()),
       name_(shape.name),
@@ -44,8 +44,7 @@ Mesh::Mesh(RendererState& renderer,
                           vk::BufferUsageFlagBits::eTransferDst |
                               vk::BufferUsageFlagBits::eVertexBuffer,
                           vk::MemoryPropertyFlagBits::eDeviceLocal);
-    gpu_indices_.SetData(renderer,
-                         indices,
+    gpu_indices_.SetData(renderer, indices,
                          vk::BufferUsageFlagBits::eTransferDst |
                              vk::BufferUsageFlagBits::eIndexBuffer,
                          vk::MemoryPropertyFlagBits::eDeviceLocal);
@@ -59,20 +58,10 @@ Mesh::Mesh(Mesh&& other)
       tri_count_(other.tri_count_)
 {}
 
-void Mesh::RecordDrawCommand(vk::CommandBuffer& command_buffer)
-{
-    command_buffer.bindVertexBuffers(0, gpu_vertices_.GetBuffer(), {0});
-    command_buffer.bindIndexBuffer(gpu_indices_.GetBuffer(), 0,
-                                   vk::IndexType::eUint32);
-    command_buffer.drawIndexed(tri_count_ * 3u, 1, 0, 0, 0);
-}
+vk::Buffer Mesh::GetVertexBuffer() const { return gpu_vertices_.GetBuffer(); }
 
-uint32_t Mesh::GetVertexCount()
-{
-    return vertex_count_;
-}
+vk::Buffer Mesh::GetIndexBuffer() const { return gpu_indices_.GetBuffer(); }
 
-uint32_t Mesh::GetTriangleCount()
-{
-    return tri_count_;
-}
+uint32_t Mesh::GetVertexCount() const { return vertex_count_; }
+
+uint32_t Mesh::GetTriangleCount() const { return tri_count_; }

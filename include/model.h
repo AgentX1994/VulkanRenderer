@@ -3,8 +3,8 @@
 #include <string>
 #include <vector>
 
-#define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
-#include <vulkan/vulkan.hpp>
+#include "common.h"
+#include "common_vulkan.h"
 
 #include "mesh.h"
 #include "tiny_obj_loader.h"
@@ -20,6 +20,10 @@ public:
 
     uint32_t GetVertexCount();
     uint32_t GetTriangleCount();
+
+    const std::vector<Mesh>& GetMeshes();
+
+    const std::string& GetMaterialName();
 
 private:
     std::vector<Mesh> meshes_;

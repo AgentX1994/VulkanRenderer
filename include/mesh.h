@@ -2,8 +2,8 @@
 
 #include <vector>
 
-#define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
-#include <vulkan/vulkan.hpp>
+#include "common.h"
+#include "common_vulkan.h"
 
 #include "gpu_buffer.h"
 #include "tiny_obj_loader.h"
@@ -17,10 +17,11 @@ public:
     Mesh(const Mesh&) = delete;
     Mesh(Mesh&& mesh);
 
-    void RecordDrawCommand(vk::CommandBuffer& command_buffer);
+    vk::Buffer GetVertexBuffer() const;
+    vk::Buffer GetIndexBuffer() const;
 
-    uint32_t GetVertexCount();
-    uint32_t GetTriangleCount();
+    uint32_t GetVertexCount() const;
+    uint32_t GetTriangleCount() const;
 
 private:
     std::string name_;

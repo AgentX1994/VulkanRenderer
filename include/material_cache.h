@@ -3,6 +3,8 @@
 #include <map>
 #include <string>
 
+#include "common.h"
+
 #include "tiny_obj_loader.h"
 #include "material.h"
 
@@ -14,7 +16,9 @@ public:
     void LoadMaterial(RendererState& renderer,
                      std::string name, tinyobj::material_t material_definition);
     
-    Material* GetMaterialByName(std::string name);
+    NonOwningPointer<Material> GetMaterialByName(std::string name);
+
+    void RecreateAllPipelines(RendererState& renderer);
 
     void Clear();
 

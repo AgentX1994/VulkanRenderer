@@ -2,11 +2,8 @@
 
 #include <vector>
 
-#define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
-#include <vulkan/vulkan.hpp>
-
-#define GLFW_INCLUDE_VULKAN
-#include <GLFW/glfw3.h>
+#include "common.h"
+#include "common_vulkan.h"
 
 class RendererState;
 

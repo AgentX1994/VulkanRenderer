@@ -37,7 +37,10 @@ RendererState::RendererState(
 
     render_pass_ = CreateRenderPass();
     CreateFramebuffers();
-    descriptor_set_layout_ = CreateDescriptorSetLayout();
+    descriptor_pool_ = CreateDescriptorPool();
+    camera_descriptor_set_layout_ = CreateCameraDescriptorSetLayout();
+    object_descriptor_set_layout_ = CreateObjectDescriptorSetLayout();
+    material_descriptor_set_layout_ = CreateMaterialDescriptorSetLayout();
 }
 
 RendererState::~RendererState()
@@ -57,7 +60,10 @@ RendererState::~RendererState()
     depth_image_.reset();
 
     device_.destroyRenderPass(render_pass_);
-    device_.destroyDescriptorSetLayout(descriptor_set_layout_);
+    device_.destroyDescriptorSetLayout(camera_descriptor_set_layout_);
+    device_.destroyDescriptorSetLayout(object_descriptor_set_layout_);
+    device_.destroyDescriptorSetLayout(material_descriptor_set_layout_);
+    device_.destroyDescriptorPool(descriptor_pool_);
 
     swapchain_.reset();
     device_.destroyCommandPool(transient_command_pool_);
@@ -129,20 +135,36 @@ void RendererState::RecreateSwapchain(GLFWwindow* window)
     CreateColorResources();
     CreateDepthResources();
     CreateFramebuffers();
+    material_cache_.RecreateAllPipelines(*this);
 }
 
 Swapchain& RendererState::GetSwapchain() { return swapchain_.value(); }
 
 vk::RenderPass& RendererState::GetRenderPass() { return render_pass_; }
 
+vk::DescriptorPool& RendererState::GetDescriptorPool()
+{
+    return descriptor_pool_;
+}
+
 std::vector<vk::Framebuffer>& RendererState::GetFramebuffers()
 {
     return swapchain_frame_buffers_;
 }
 
-vk::DescriptorSetLayout& RendererState::GetDescriptorSetLayout()
+vk::DescriptorSetLayout& RendererState::GetCameraDescriptorSetLayout()
 {
-    return descriptor_set_layout_;
+    return camera_descriptor_set_layout_;
+}
+
+vk::DescriptorSetLayout& RendererState::GetObjectDescriptorSetLayout()
+{
+    return object_descriptor_set_layout_;
+}
+
+vk::DescriptorSetLayout& RendererState::GetMaterialDescriptorSetLayout()
+{
+    return material_descriptor_set_layout_;
 }
 
 vk::ImageView& RendererState::GetColorImageView() { return color_image_view_; }
@@ -505,8 +527,8 @@ void RendererState::CreateDepthResources()
 
 vk::CommandPool RendererState::CreateCommandPool(uint32_t queue_index)
 {
-    vk::CommandPoolCreateInfo pool_info(vk::CommandPoolCreateFlags(),
-                                        queue_index);
+    vk::CommandPoolCreateInfo pool_info(
+        vk::CommandPoolCreateFlagBits::eResetCommandBuffer, queue_index);
 
     return device_.createCommandPool(pool_info);
 }
@@ -587,18 +609,58 @@ void RendererState::CreateFramebuffers()
     }
 }
 
-vk::DescriptorSetLayout RendererState::CreateDescriptorSetLayout()
+vk::DescriptorPool RendererState::CreateDescriptorPool()
 {
-    vk::DescriptorSetLayoutBinding ubo_layout_binding(
+    // TODO Figure out better way of handling pool sizes
+    std::array<vk::DescriptorPoolSize, 2> pool_sizes = {
+        {{vk::DescriptorType::eUniformBuffer, static_cast<uint32_t>(10u)},
+         {vk::DescriptorType::eCombinedImageSampler,
+          static_cast<uint32_t>(10u)}}};
+
+    vk::DescriptorPoolCreateInfo pool_info(vk::DescriptorPoolCreateFlags(), 10u,
+                                           pool_sizes);
+
+    return device_.createDescriptorPool(pool_info);
+}
+
+vk::DescriptorSetLayout RendererState::CreateCameraDescriptorSetLayout()
+{
+    vk::DescriptorSetLayoutBinding camera_layout_binding(
         0, vk::DescriptorType::eUniformBuffer, 1,
         vk::ShaderStageFlagBits::eVertex);
 
+    std::array<vk::DescriptorSetLayoutBinding, 1> bindings = {
+        camera_layout_binding};
+
+    vk::DescriptorSetLayoutCreateInfo layout_info(
+        vk::DescriptorSetLayoutCreateFlags(), bindings);
+
+    return device_.createDescriptorSetLayout(layout_info);
+}
+
+vk::DescriptorSetLayout RendererState::CreateObjectDescriptorSetLayout()
+{
+    vk::DescriptorSetLayoutBinding object_layout_binding(
+        0, vk::DescriptorType::eUniformBuffer, 1,
+        vk::ShaderStageFlagBits::eVertex);
+
+    std::array<vk::DescriptorSetLayoutBinding, 1> bindings = {
+        object_layout_binding};
+
+    vk::DescriptorSetLayoutCreateInfo layout_info(
+        vk::DescriptorSetLayoutCreateFlags(), bindings);
+
+    return device_.createDescriptorSetLayout(layout_info);
+}
+
+vk::DescriptorSetLayout RendererState::CreateMaterialDescriptorSetLayout()
+{
     vk::DescriptorSetLayoutBinding sampler_layout_binding(
-        1, vk::DescriptorType::eCombinedImageSampler, 1,
+        0, vk::DescriptorType::eCombinedImageSampler, 1,
         vk::ShaderStageFlagBits::eFragment);
 
-    std::array<vk::DescriptorSetLayoutBinding, 2> bindings = {
-        ubo_layout_binding, sampler_layout_binding};
+    std::array<vk::DescriptorSetLayoutBinding, 1> bindings = {
+        sampler_layout_binding};
 
     vk::DescriptorSetLayoutCreateInfo layout_info(
         vk::DescriptorSetLayoutCreateFlags(), bindings);

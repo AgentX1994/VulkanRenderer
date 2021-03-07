@@ -1,10 +1,9 @@
 #pragma once
 
 #include <array>
-#include <glm/glm.hpp>
 
-#define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
-#include <vulkan/vulkan.hpp>
+#include "common.h"
+#include "common_vulkan.h"
 
 struct Vertex
 {
