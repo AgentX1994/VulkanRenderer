@@ -43,6 +43,9 @@ public:
     MaterialCache& GetMaterialCache();
 
     vk::SampleCountFlagBits GetMaxSampleCount();
+    vk::SampleCountFlagBits GetCurrentSampleCount();
+
+    void UpdateCurrentSampleCount(vk::SampleCountFlagBits new_sample_count);
 
     void RecreateSwapchain(GLFWwindow* window);
     Swapchain& GetSwapchain();
@@ -180,5 +183,6 @@ private:
     vk::DescriptorSetLayout object_descriptor_set_layout_;
     vk::DescriptorSetLayout material_descriptor_set_layout_;
 
-    vk::SampleCountFlagBits msaa_samples_ = vk::SampleCountFlagBits::e1;
+    vk::SampleCountFlagBits max_msaa_samples_ = vk::SampleCountFlagBits::e1;
+    vk::SampleCountFlagBits current_msaa_samples_ = vk::SampleCountFlagBits::e1;
 };

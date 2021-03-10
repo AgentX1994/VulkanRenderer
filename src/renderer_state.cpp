@@ -18,7 +18,8 @@ RendererState::RendererState(
     surface_ = CreateSurface(window);
 
     physical_device_ = CreatePhysicalDevice(required_device_extensions);
-    msaa_samples_ = GetMaxUsableSampleCount();
+    max_msaa_samples_ = GetMaxUsableSampleCount();
+    current_msaa_samples_ = max_msaa_samples_;
 
     queue_families_ = FindQueueFamilies(physical_device_);
 
@@ -106,7 +107,43 @@ MaterialCache& RendererState::GetMaterialCache() { return material_cache_; }
 
 vk::SampleCountFlagBits RendererState::GetMaxSampleCount()
 {
-    return msaa_samples_;
+    return max_msaa_samples_;
+}
+
+vk::SampleCountFlagBits RendererState::GetCurrentSampleCount()
+{
+    return current_msaa_samples_;
+}
+
+void RendererState::UpdateCurrentSampleCount(
+    vk::SampleCountFlagBits new_sample_count)
+{
+    device_.waitIdle();
+
+    if (new_sample_count > max_msaa_samples_) {
+        throw std::runtime_error(
+            "New sample count is greater than max sample count!");
+    }
+    if (new_sample_count == current_msaa_samples_) {
+        return;
+    }
+    current_msaa_samples_ = new_sample_count;
+
+    // Destroy the resoures that need to be recreated
+    for (auto fb : swapchain_frame_buffers_) {
+        device_.destroyFramebuffer(fb);
+    }
+    device_.destroyImageView(color_image_view_);
+    color_image_.reset();
+    device_.destroyImageView(depth_image_view_);
+    depth_image_.reset();
+    device_.destroyRenderPass(render_pass_);
+
+    CreateColorResources();
+    CreateDepthResources();
+    render_pass_ = CreateRenderPass();
+    CreateFramebuffers();
+    material_cache_.RecreateAllPipelines(*this);
 }
 
 void RendererState::RecreateSwapchain(GLFWwindow* window)
@@ -497,8 +534,9 @@ void RendererState::CreateColorResources()
     auto extent = swapchain_->GetExtent();
     auto color_format = swapchain_->GetImageFormat().format;
 
-    color_image_.emplace(*this, extent.width, extent.height, 1, msaa_samples_,
-                         color_format, vk::ImageTiling::eOptimal,
+    color_image_.emplace(*this, extent.width, extent.height, 1,
+                         current_msaa_samples_, color_format,
+                         vk::ImageTiling::eOptimal,
                          vk::ImageUsageFlagBits::eTransientAttachment |
                              vk::ImageUsageFlagBits::eColorAttachment,
                          vk::MemoryPropertyFlagBits::eDeviceLocal);
@@ -512,8 +550,9 @@ void RendererState::CreateDepthResources()
     vk::Format depth_format = FindDepthFormat(physical_device_);
 
     auto extent = swapchain_->GetExtent();
-    depth_image_.emplace(*this, extent.width, extent.height, 1, msaa_samples_,
-                         depth_format, vk::ImageTiling::eOptimal,
+    depth_image_.emplace(*this, extent.width, extent.height, 1,
+                         current_msaa_samples_, depth_format,
+                         vk::ImageTiling::eOptimal,
                          vk::ImageUsageFlagBits::eDepthStencilAttachment,
                          vk::MemoryPropertyFlagBits::eDeviceLocal);
 
@@ -537,14 +576,14 @@ vk::RenderPass RendererState::CreateRenderPass()
 {
     vk::AttachmentDescription color_attachment(
         vk::AttachmentDescriptionFlags(), swapchain_->GetImageFormat().format,
-        msaa_samples_, vk::AttachmentLoadOp::eClear,
+        current_msaa_samples_, vk::AttachmentLoadOp::eClear,
         vk::AttachmentStoreOp::eStore, vk::AttachmentLoadOp::eDontCare,
         vk::AttachmentStoreOp::eDontCare, vk::ImageLayout::eUndefined,
         vk::ImageLayout::eColorAttachmentOptimal);
 
     vk::AttachmentDescription depth_attachment(
         vk::AttachmentDescriptionFlags(), FindDepthFormat(physical_device_),
-        msaa_samples_, vk::AttachmentLoadOp::eClear,
+        current_msaa_samples_, vk::AttachmentLoadOp::eClear,
         vk::AttachmentStoreOp::eDontCare, vk::AttachmentLoadOp::eDontCare,
         vk::AttachmentStoreOp::eDontCare, vk::ImageLayout::eUndefined,
         vk::ImageLayout::eDepthStencilAttachmentOptimal);
@@ -565,10 +604,14 @@ vk::RenderPass RendererState::CreateRenderPass()
     vk::AttachmentReference color_attachment_resolve_ref(
         2, vk::ImageLayout::eColorAttachmentOptimal);
 
+    // if the sample count is 1, then we cannot use a resolve attachment
     vk::SubpassDescription subpass(
         vk::SubpassDescriptionFlags(), vk::PipelineBindPoint::eGraphics, {},
-        color_attachment_ref, color_attachment_resolve_ref,
+        color_attachment_ref, {},
         &depth_attachment_ref, {});
+    if (current_msaa_samples_ > vk::SampleCountFlagBits::e1) {
+        subpass.setResolveAttachments(color_attachment_resolve_ref);
+    }
 
     vk::SubpassDependency dependency(
         VK_SUBPASS_EXTERNAL, 0,
@@ -580,8 +623,11 @@ vk::RenderPass RendererState::CreateRenderPass()
         vk::AccessFlagBits::eColorAttachmentWrite |
             vk::AccessFlagBits::eDepthStencilAttachmentWrite);
 
-    std::array<vk::AttachmentDescription, 3> attachments = {
-        {color_attachment, depth_attachment, color_attachment_resolve}};
+    std::vector<vk::AttachmentDescription> attachments = {color_attachment,
+                                                          depth_attachment};
+    if (current_msaa_samples_ > vk::SampleCountFlagBits::e1) {
+        attachments.push_back(color_attachment_resolve);
+    }
 
     vk::RenderPassCreateInfo render_pass_info(vk::RenderPassCreateFlags(),
                                               attachments, subpass, dependency);
@@ -597,8 +643,17 @@ void RendererState::CreateFramebuffers()
     auto extent = swapchain_->GetExtent();
 
     for (size_t i = 0; i < image_count; ++i) {
-        std::array<vk::ImageView, 3> attachments = {
-            color_image_view_, depth_image_view_, image_views[i]};
+        std::vector<vk::ImageView> attachments;
+        attachments.reserve(3);
+        // if the sample count is 1, then we cannot use a resolve attachment
+        if (current_msaa_samples_ == vk::SampleCountFlagBits::e1) {
+            attachments.push_back(image_views[i]);
+            attachments.push_back(depth_image_view_);
+        } else {
+            attachments.push_back(color_image_view_);
+            attachments.push_back(depth_image_view_);
+            attachments.push_back(image_views[i]);
+        }
 
         vk::FramebufferCreateInfo framebuffer_info(
             vk::FramebufferCreateFlags(), render_pass_, attachments,

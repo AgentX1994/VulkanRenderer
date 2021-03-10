@@ -136,7 +136,7 @@ std::pair<vk::PipelineLayout, vk::Pipeline> Material::CreateGraphicsPipeline(
         vk::FrontFace::eCounterClockwise, VK_FALSE, 0.0f, 0.0f, 0.0f, 1.0f);
 
     vk::PipelineMultisampleStateCreateInfo multisampling(
-        vk::PipelineMultisampleStateCreateFlags(), renderer.GetMaxSampleCount(),
+        vk::PipelineMultisampleStateCreateFlags(), renderer.GetCurrentSampleCount(),
         VK_TRUE, 0.2f, nullptr, VK_FALSE, VK_FALSE);
 
     vk::PipelineColorBlendAttachmentState color_blend_attachment(

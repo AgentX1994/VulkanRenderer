@@ -333,6 +333,29 @@ void Application::DrawFrame()
     vk::PipelineStageFlags wait_dest_stage_mask =
         vk::PipelineStageFlagBits::eColorAttachmentOutput;
 
+    // For updating MSAA samples
+    const std::map<const char*, vk::SampleCountFlagBits>
+        SAMPLE_COUNT_MAP = {{"1 Sample", vk::SampleCountFlagBits::e1},
+                            {"2 Samples", vk::SampleCountFlagBits::e2},
+                            {"4 Samples", vk::SampleCountFlagBits::e4},
+                            {"8 Samples", vk::SampleCountFlagBits::e8},
+                            {"16 Samples", vk::SampleCountFlagBits::e16},
+                            {"32 Samples", vk::SampleCountFlagBits::e32},
+                            {"64 Samples", vk::SampleCountFlagBits::e64}};
+    const std::map<vk::SampleCountFlagBits, const char*>
+        REVERSE_SAMPLE_COUNT_MAP = {
+            {vk::SampleCountFlagBits::e1, "1 Sample"},
+            {vk::SampleCountFlagBits::e2, "2 Samples"},
+            {vk::SampleCountFlagBits::e4, "4 Samples"},
+            {vk::SampleCountFlagBits::e8, "8 Samples"},
+            {vk::SampleCountFlagBits::e16, "16 Samples"},
+            {vk::SampleCountFlagBits::e32, "32 Samples"},
+            {vk::SampleCountFlagBits::e64, "64 Samples"}};
+
+    bool should_update_samples = false;
+    auto msaa_samples = renderer_->GetCurrentSampleCount();
+    auto msaa_samples_str = REVERSE_SAMPLE_COUNT_MAP.at(msaa_samples);
+
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
@@ -347,38 +370,34 @@ void Application::DrawFrame()
             vertex_count += model->GetVertexCount();
             tri_count += model->GetTriangleCount();
         }
+
         ImGui::Text("%u vertices", vertex_count);
         ImGui::Text("%u triangles", tri_count);
+
         auto extent = renderer_->GetSwapchain().GetExtent();
         ImGui::Text("Framebuffer Size: %ux%u", extent.width, extent.height);
-        uint32_t msaa_sample_count = 1;
-        switch (renderer_->GetMaxSampleCount()) {
-            case vk::SampleCountFlagBits::e64:
-                msaa_sample_count = 64;
-                break;
-            case vk::SampleCountFlagBits::e32:
-                msaa_sample_count = 32;
-                break;
-            case vk::SampleCountFlagBits::e16:
-                msaa_sample_count = 16;
-                break;
-            case vk::SampleCountFlagBits::e8:
-                msaa_sample_count = 8;
-                break;
-            case vk::SampleCountFlagBits::e4:
-                msaa_sample_count = 4;
-                break;
-            case vk::SampleCountFlagBits::e2:
-                msaa_sample_count = 2;
-                break;
-            case vk::SampleCountFlagBits::e1:
-                msaa_sample_count = 1;
-                break;
-            default:
-                msaa_sample_count = 1;
-                break;
+
+        auto max_msaa_sample_count = renderer_->GetMaxSampleCount();
+        uint32_t max_msaa_sample_count_int = (uint32_t)max_msaa_sample_count;
+        ImGui::Text("Max MSAA Sample Count: %u", max_msaa_sample_count_int);
+
+        if (ImGui::BeginCombo("Current MSAA Sample Count", msaa_samples_str)) {
+            for (auto& map_entry : SAMPLE_COUNT_MAP) {
+                if (map_entry.second > max_msaa_sample_count) {
+                    break;
+                }
+                bool is_selected = map_entry.first == msaa_samples_str;
+                if (ImGui::Selectable(map_entry.first, is_selected)) {
+                    msaa_samples_str = map_entry.first;
+                    msaa_samples = map_entry.second;
+                    should_update_samples = true;
+                }
+                if (is_selected) {
+                    ImGui::SetItemDefaultFocus();
+                }
+            }
+            ImGui::EndCombo();
         }
-        ImGui::Text("MSAA Sample Count: %u", msaa_sample_count);
         ImGui::Text("%.02f FPS", frames_per_second_);
         ImGui::DragFloat("Rotation Rate", &rotation_rate_, 0.1f, -60.0f, 60.0f,
                          "%.02f RPM", ImGuiSliderFlags_None);
@@ -440,6 +459,10 @@ void Application::DrawFrame()
         RecreateSwapChain();
     } else if (present_result != vk::Result::eSuccess) {
         throw std::runtime_error("failed to present swap chain image!");
+    }
+
+    if (should_update_samples) {
+        renderer_->UpdateCurrentSampleCount(msaa_samples);
     }
 
     current_frame_ = (current_frame_ + 1) % MAX_FRAMES_IN_FLIGHT;
@@ -541,8 +564,9 @@ void Application::UpdateCameraBuffer()
 {
     auto extent = renderer_->GetSwapchain().GetExtent();
     GpuCameraData camera{};
-    auto pos = glm::vec3(3.0f * glm::cos(glm::radians(current_model_rotation_degrees_)),
-                         3.0f * glm::sin(glm::radians(current_model_rotation_degrees_)), 2.0f);
+    auto pos = glm::vec3(
+        3.0f * glm::cos(glm::radians(current_model_rotation_degrees_)),
+        3.0f * glm::sin(glm::radians(current_model_rotation_degrees_)), 2.0f);
     camera.view = glm::lookAt(pos, glm::vec3(0.0f, 0.0f, 0.0f),
                               glm::vec3(0.0f, 0.0f, 1.0f));
     camera.proj = glm::perspective(
