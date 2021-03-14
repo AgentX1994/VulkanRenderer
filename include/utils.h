@@ -15,6 +15,10 @@ const std::string CompilationStatusToString(shaderc_compilation_status status);
 std::vector<uint32_t> CompileShader(const std::string& path,
                                     shaderc_shader_kind kind);
 
+const bool CheckExtensions(
+    const std::vector<vk::ExtensionProperties> supported_extensions,
+    std::vector<const char*> required_extensions);
+
 uint32_t FindMemoryType(vk::PhysicalDevice& physical_device,
                         uint32_t type_filter,
                         vk::MemoryPropertyFlags properties);

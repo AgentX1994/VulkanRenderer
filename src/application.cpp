@@ -23,9 +23,29 @@
 constexpr uint32_t WIDTH = 800;
 constexpr uint32_t HEIGHT = 600;
 
+constexpr uint64_t MAX_FPS_DATA_COUNT = 10;
+constexpr double FPS_GRAPH_UPDATE_TIME = 0.1;
+
 const std::vector<std::string> MODEL_PATHS = {"models/viking_room.obj"};
 const std::string TEXTURE_PATH = "textures/viking_room.png";
 
+const std::map<const char*, vk::SampleCountFlagBits> SAMPLE_COUNT_MAP = {
+    {"1 Sample", vk::SampleCountFlagBits::e1},
+    {"2 Samples", vk::SampleCountFlagBits::e2},
+    {"4 Samples", vk::SampleCountFlagBits::e4},
+    {"8 Samples", vk::SampleCountFlagBits::e8},
+    {"16 Samples", vk::SampleCountFlagBits::e16},
+    {"32 Samples", vk::SampleCountFlagBits::e32},
+    {"64 Samples", vk::SampleCountFlagBits::e64}};
+
+const std::map<vk::SampleCountFlagBits, const char*> REVERSE_SAMPLE_COUNT_MAP =
+    {{vk::SampleCountFlagBits::e1, "1 Sample"},
+     {vk::SampleCountFlagBits::e2, "2 Samples"},
+     {vk::SampleCountFlagBits::e4, "4 Samples"},
+     {vk::SampleCountFlagBits::e8, "8 Samples"},
+     {vk::SampleCountFlagBits::e16, "16 Samples"},
+     {vk::SampleCountFlagBits::e32, "32 Samples"},
+     {vk::SampleCountFlagBits::e64, "64 Samples"}};
 struct UniformBufferObject
 {
     alignas(4 * sizeof(float)) glm::mat4 model;
@@ -50,68 +70,69 @@ static VKAPI_ATTR uint32_t VKAPI_CALL DebugCallback(
     VkDebugUtilsMessageTypeFlagsEXT messageType,
     const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData)
 {
-    std::cerr << "validation layer: " << pCallbackData->pMessage << std::endl;
+    std::ofstream& log_file = *static_cast<std::ofstream*>(pUserData);
+    log_file << pCallbackData->pMessage << std::endl;
+    std::cout << pCallbackData->pMessage << std::endl;
 
     return VK_FALSE;
 }
 
+void PopulateDebugInfo(vk::DebugUtilsMessengerCreateInfoEXT& messenger_info,
+                       void* ctxt = nullptr)
+{
+    messenger_info.setMessageSeverity(
+        vk::DebugUtilsMessageSeverityFlagBitsEXT::eError |
+        vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning |
+        vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo |
+        vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose);
+    messenger_info.setMessageType(
+        vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral |
+        vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation |
+        vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance);
+    messenger_info.setPfnUserCallback(DebugCallback);
+    messenger_info.setPUserData(ctxt);
+}
+
+static void check_vk_result(VkResult err)
+{
+    if (err == 0) return;
+    fprintf(stderr, "[vulkan] Error: VkResult = %d\n", err);
+    if (err < 0) abort();
+}
+
+struct GlfwCallbacks
+{
+    static void FramebufferResizeCallback(GLFWwindow* window, int width,
+                                          int height)
+    {
+        auto app =
+            reinterpret_cast<Application*>(glfwGetWindowUserPointer(window));
+        app->SetFramebufferResized();
+    }
+
+    static void WindowContentScaleCallback(GLFWwindow* window, float xscale,
+                                           float yscale)
+    {
+        assert(xscale == yscale);
+        auto app =
+            reinterpret_cast<Application*>(glfwGetWindowUserPointer(window));
+        app->SetRenderScaling(xscale);
+    }
+};
+
 void Application::Run()
 {
-    InitWindow();
-    InitVulkan();
-    SetupImgui();
+    Init();
     MainLoop();
     Cleanup();
 }
 
-static void FramebufferResizeCallback(GLFWwindow* window, int width, int height)
+void Application::Init()
 {
-    auto app = reinterpret_cast<Application*>(glfwGetWindowUserPointer(window));
-    app->SetFramebufferResized();
-}
-
-static void WindowContentScaleCallback(GLFWwindow* window, float xscale,
-                                       float yscale)
-{
-    assert(xscale == yscale);
-    auto app = reinterpret_cast<Application*>(glfwGetWindowUserPointer(window));
-    app->SetRenderScaling(xscale);
-}
-
-void Application::SetFramebufferResized() { framebuffer_resized_ = true; }
-void Application::SetRenderScaling(float scale)
-{
-    window_scaling_ = scale;
-
-    // Rescale ImGui
-    ResizeImGui();
-}
-
-void Application::InitWindow()
-{
-    glfwInit();
-
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    glfwWindowHint(GLFW_SCALE_TO_MONITOR, GLFW_TRUE);
-
-    window_ =
-        glfwCreateWindow(WIDTH, HEIGHT, "Vulkan window", nullptr, nullptr);
-    glfwSetWindowUserPointer(window_, this);
-    float xscale, yscale;
-    glfwGetWindowContentScale(window_, &xscale, &yscale);
-    assert(xscale == yscale);  // we are assuming this
-    window_scaling_ = xscale;
-    glfwSetFramebufferSizeCallback(window_, FramebufferResizeCallback);
-}
-
-void Application::InitVulkan()
-{
-    CreateRenderer();
-    // SetupDebugMessenger();
+    InitWindow();
+    InitVulkan();
+    SetupImgui();
     LoadScene();
-    CreateFrameData();
-    CreateCameraDescriptorSets();
-    CreateCommandBuffers();
 }
 
 void Application::MainLoop()
@@ -119,15 +140,95 @@ void Application::MainLoop()
     double previous_time = glfwGetTime();
     while (!glfwWindowShouldClose(window_)) {
         glfwPollEvents();
+
+        // Get how much time the last frame took
         double current_time = glfwGetTime();
         double delta = current_time - previous_time;
-        frames_per_second_ = 1.0f / delta;
-        Update(delta);
-        DrawFrame();
         previous_time = current_time;
+
+        // Update FPS counter
+        current_frames_per_second_ = 1.0f / delta;
+
+        fps_timer_ += delta;
+        if (fps_timer_ > FPS_GRAPH_UPDATE_TIME) {
+            fps_timer_ -= FPS_GRAPH_UPDATE_TIME;
+            frames_per_second_data_.push_back(current_frames_per_second_);
+            if (frames_per_second_data_.size() > MAX_FPS_DATA_COUNT) {
+                // This is inefficient but good enough for now
+                frames_per_second_data_.erase(frames_per_second_data_.begin());
+            }
+        }
+
+        // Update scene state
+        Update(delta);
+
+        // Render new scene state
+        Render();
     }
 
     renderer_->GetDevice().waitIdle();
+}
+
+void Application::Update(float delta_time)
+{
+    // rotation_rate_ = RPM
+    // RPS = RPM * 60
+    current_model_rotation_degrees_ =
+        delta_time * rotation_rate_ * 60 + current_model_rotation_degrees_;
+    current_model_rotation_degrees_ =
+        std::fmod(current_model_rotation_degrees_, 360.0f);
+}
+
+void Application::Render()
+{
+    WaitForNextFrameFence();
+    auto image_index_optional = GetNextImage();
+    if (!image_index_optional.has_value()) {
+        RecreateSwapChain();
+        return;
+    }
+    uint32_t image_index = *image_index_optional;
+    WaitForImageFenceAndSetNewFence(image_index);
+
+    UpdateCameraUniformBuffer();
+
+    DrawScene(frame_data_[current_frame_],
+              renderer_->GetFramebuffers()[image_index],
+              command_buffers_[image_index]);
+
+    // For updating MSAA samples
+    auto msaa_samples = renderer_->GetCurrentSampleCount();
+
+    DrawGui(imgui_frame_buffers_[image_index],
+            imgui_command_buffers_[image_index], msaa_samples);
+
+    bool should_update_samples =
+        msaa_samples != renderer_->GetCurrentSampleCount();
+
+    std::array<vk::CommandBuffer, 2> command_buffers_to_submit = {
+        {command_buffers_[image_index], imgui_command_buffers_[image_index]}};
+
+    SubmitGraphicsCommands(command_buffers_to_submit);
+
+    Present(image_index);
+
+    if (should_update_samples) {
+        renderer_->UpdateCurrentSampleCount(msaa_samples);
+    }
+
+    current_frame_ = (current_frame_ + 1) % MAX_FRAMES_IN_FLIGHT;
+}
+
+void Application::CleanupSwapChain()
+{
+    for (auto framebuffer : imgui_frame_buffers_) {
+        renderer_->GetDevice().destroyFramebuffer(framebuffer);
+    }
+    renderer_->GetDevice().freeCommandBuffers(imgui_command_pool_,
+                                              imgui_command_buffers_);
+
+    renderer_->GetDevice().freeCommandBuffers(
+        renderer_->GetGraphicsCommandPool(), command_buffers_);
 }
 
 void Application::Cleanup()
@@ -155,7 +256,8 @@ void Application::Cleanup()
         renderer_->GetDevice().destroyFence(frame_data.in_flight_fence);
     }
     if constexpr (ENABLE_VALIDATION_LAYERS) {
-        // instance_.destroyDebugUtilsMessengerEXT(debug_messenger_);
+        renderer_->GetInstance().destroyDebugUtilsMessengerEXT(
+            debug_messenger_);
     }
     renderer_.reset();
 
@@ -163,35 +265,43 @@ void Application::Cleanup()
     glfwTerminate();
 }
 
-const bool CheckExtensions(
-    const std::vector<vk::ExtensionProperties> supported_extensions,
-    std::vector<const char*> required_extensions)
+void Application::InitWindow()
 {
-    for (const auto extension_name : required_extensions) {
-        if (std::find_if(supported_extensions.begin(),
-                         supported_extensions.end(), [&extension_name](auto e) {
-                             return strcmp(e.extensionName, extension_name) ==
-                                    0;
-                         }) == supported_extensions.end()) {
-            return false;
-        }
-    }
-    return true;
+    glfwInit();
+
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+    glfwWindowHint(GLFW_SCALE_TO_MONITOR, GLFW_TRUE);
+
+    window_ =
+        glfwCreateWindow(WIDTH, HEIGHT, "Vulkan window", nullptr, nullptr);
+    glfwSetWindowUserPointer(window_, this);
+    float xscale, yscale;
+    glfwGetWindowContentScale(window_, &xscale, &yscale);
+    assert(xscale == yscale);  // we are assuming this
+    window_scaling_ = xscale;
+    glfwSetFramebufferSizeCallback(window_,
+                                   GlfwCallbacks::FramebufferResizeCallback);
+    glfwSetWindowContentScaleCallback(
+        window_, GlfwCallbacks::WindowContentScaleCallback);
 }
 
-void PopulateDebugInfo(vk::DebugUtilsMessengerCreateInfoEXT& messenger_info)
+void Application::SetFramebufferResized() { framebuffer_resized_ = true; }
+
+void Application::SetRenderScaling(float scale)
 {
-    messenger_info.setMessageSeverity(
-        vk::DebugUtilsMessageSeverityFlagBitsEXT::eError |
-        vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning |
-        vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo |
-        vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose);
-    messenger_info.setMessageType(
-        vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral |
-        vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation |
-        vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance);
-    messenger_info.setPfnUserCallback(DebugCallback);
-    messenger_info.setPUserData(nullptr);
+    window_scaling_ = scale;
+
+    // Rescale ImGui
+    ResizeImGui();
+}
+
+void Application::InitVulkan()
+{
+    CreateRenderer();
+    SetupDebugMessenger();
+    CreateFrameData();
+    CreateCameraDescriptorSets();
+    CreateCommandBuffers();
 }
 
 void Application::CreateRenderer()
@@ -202,6 +312,18 @@ void Application::CreateRenderer()
     }
     renderer_.emplace("Vulkan Renderer", window_, GetRequiredExtensions(),
                       DEVICE_EXTENSIONS, layers);
+}
+
+void Application::SetupDebugMessenger()
+{
+    if constexpr (ENABLE_VALIDATION_LAYERS) {
+        log_file_.open("validation_layer_errors.log");
+        vk::DebugUtilsMessengerCreateInfoEXT messenger_info;
+        PopulateDebugInfo(messenger_info, static_cast<void*>(&log_file_));
+        debug_messenger_ =
+            renderer_->GetInstance().createDebugUtilsMessengerEXT(
+                messenger_info, nullptr);
+    }
 }
 
 std::vector<const char*> Application::GetRequiredExtensions()
@@ -219,17 +341,6 @@ std::vector<const char*> Application::GetRequiredExtensions()
     }
 
     return extensions;
-}
-
-void Application::SetupDebugMessenger()
-{
-    if constexpr (ENABLE_VALIDATION_LAYERS) {
-        vk::DebugUtilsMessengerCreateInfoEXT messenger_info;
-        PopulateDebugInfo(messenger_info);
-        debug_messenger_ =
-            renderer_->GetInstance().createDebugUtilsMessengerEXT(
-                messenger_info, nullptr);
-    }
 }
 
 void Application::CreateCommandBuffers()
@@ -274,7 +385,106 @@ void Application::CreateFrameData()
     }
 }
 
-void Application::DrawFrame()
+void Application::RecreateSwapChain()
+{
+    renderer_->RecreateSwapchain(window_);
+
+    CleanupSwapChain();
+
+    CreateCommandBuffers();
+
+    ImGui_ImplVulkan_SetMinImageCount(
+        renderer_->GetSwapchain().GetMinimumImageCount());
+    CreateImGuiCommandBuffers();
+    CreateImGuiFramebuffers();
+}
+
+void Application::CreateCameraDescriptorSets()
+{
+    std::vector<vk::DescriptorSetLayout> layouts(
+        MAX_FRAMES_IN_FLIGHT, renderer_->GetCameraDescriptorSetLayout());
+    vk::DescriptorSetAllocateInfo alloc_info(renderer_->GetDescriptorPool(),
+                                             layouts);
+
+    auto camera_descriptor_sets =
+        renderer_->GetDevice().allocateDescriptorSets(alloc_info);
+
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        auto& frame_data = frame_data_[i];
+        frame_data.camera_uniform_descriptor = camera_descriptor_sets[i];
+
+        // now write to the descriptor set
+        vk::DescriptorBufferInfo buffer_info(
+            frame_data.camera_uniform_buffer->GetBuffer(), 0,
+            sizeof(GpuCameraData));
+
+        std::array<vk::WriteDescriptorSet, 1> descriptor_writes = {
+            {{frame_data.camera_uniform_descriptor,
+              0,
+              0,
+              vk::DescriptorType::eUniformBuffer,
+              {},
+              buffer_info}}};
+
+        renderer_->GetDevice().updateDescriptorSets(descriptor_writes, {});
+    }
+}
+
+void Application::UpdateCameraUniformBuffer()
+{
+    auto extent = renderer_->GetSwapchain().GetExtent();
+    float aspect_ratio = extent.width / (float)extent.height;
+    camera_.SetAspectRatio(aspect_ratio);
+    auto pos = glm::vec3(
+        3.0f * glm::cos(glm::radians(current_model_rotation_degrees_)),
+        3.0f * glm::sin(glm::radians(current_model_rotation_degrees_)), 2.0f);
+    camera_.SetPosition(pos);
+    camera_.LookAt(glm::vec3(0.0f, 0.0f, 0.0f));
+    GpuCameraData camera = camera_.GetCameraData();
+
+    auto& frame_data = frame_data_[current_frame_];
+
+    void* data = renderer_->GetDevice().mapMemory(
+        frame_data.camera_uniform_buffer->GetMemory(), 0, sizeof(camera));
+    memcpy(data, &camera, sizeof(GpuCameraData));
+    renderer_->GetDevice().unmapMemory(
+        frame_data.camera_uniform_buffer->GetMemory());
+}
+
+void Application::LoadScene()
+{
+    for (const auto& path : MODEL_PATHS) {
+        models_.emplace_back(renderer_.value(), path);
+    }
+
+    NonOwningPointer<SceneNode> root = scene_graph_.GetRoot();
+
+    {
+        render_objects_.emplace_back(*renderer_);
+        auto& obj1 = render_objects_.back();
+        auto scene_node1 = root->CreateChildNode();
+        scene_node1->SetTranslation(glm::vec3(-1.0, 0.0, 0.0));
+        obj1.SetModel(&models_.front());
+        scene_node1->SetRenderObject(&obj1);
+    }
+
+    {
+        render_objects_.emplace_back(*renderer_);
+        auto& obj2 = render_objects_.back();
+        auto scene_node2 = root->CreateChildNode();
+        scene_node2->SetTranslation(glm::vec3(1.0, 0.0, 0.0));
+        obj2.SetModel(&models_.front());
+        scene_node2->SetRenderObject(&obj2);
+    }
+
+    // Create camera node
+    {
+        auto camera_node = root->CreateChildNode();
+        camera_node->SetCamera(&camera_);
+    }
+}
+
+void Application::WaitForNextFrameFence()
 {
     // Wait until this fence has been finished
     auto wait_for_fence_result = renderer_->GetDevice().waitForFences(
@@ -283,189 +493,47 @@ void Application::DrawFrame()
     if (wait_for_fence_result != vk::Result::eSuccess) {
         throw std::runtime_error("Could not wait for fence!");
     }
+}
 
+std::optional<uint32_t> Application::GetNextImage()
+{
     // Get next image
     vk::ResultValue<uint32_t> result(vk::Result::eSuccess, 0);
-    try {
-        result = renderer_->GetSwapchain().GetNextImage(
-            std::numeric_limits<uint64_t>::max(),
-            frame_data_[current_frame_].image_available_semaphore, {});
-    } catch (vk::SystemError& e) {
-        if (e.code() == vk::Result::eErrorOutOfDateKHR) {
-            RecreateSwapChain();
-            return;
-        } else {
-            throw;
-        }
-    }
-    uint32_t image_index;
+    result = renderer_->GetSwapchain().GetNextImage(
+        std::numeric_limits<uint64_t>::max(),
+        frame_data_[current_frame_].image_available_semaphore, {});
     switch (result.result) {
         case vk::Result::eSuccess:
         case vk::Result::eSuboptimalKHR:
         case vk::Result::eNotReady:
-            image_index = result.value;
+            return result.value;
             break;
+        case vk::Result::eErrorOutOfDateKHR:
+            return std::nullopt;
         case vk::Result::eTimeout:
-            throw std::runtime_error("Could not acquire next image!");
+            throw std::runtime_error("Could not acquire next image (timeout)!");
+        default:
+            throw std::runtime_error(
+                "Could not acquire next image (unknown error)!");
     }
+}
 
+void Application::WaitForImageFenceAndSetNewFence(uint32_t image_index)
+{
     // Check if a previous frame is using this image
     // operator bool() is true if not VK_NULL_HANDLE
     if (images_in_flight_[image_index]) {
-        auto wait_for_image_fence = renderer_->GetDevice().waitForFences(
+        auto wait_result = renderer_->GetDevice().waitForFences(
             images_in_flight_[image_index], VK_TRUE,
             std::numeric_limits<uint64_t>::max());
 
-        if (wait_for_image_fence != vk::Result::eSuccess) {
+        if (wait_result != vk::Result::eSuccess) {
             throw std::runtime_error("Could not wait for image fence!");
         }
     }
 
     images_in_flight_[image_index] =
         frame_data_[current_frame_].in_flight_fence;
-
-    UpdateCameraBuffer();
-
-    DrawScene(frame_data_[current_frame_],
-              renderer_->GetFramebuffers()[image_index],
-              command_buffers_[image_index]);
-
-    vk::PipelineStageFlags wait_dest_stage_mask =
-        vk::PipelineStageFlagBits::eColorAttachmentOutput;
-
-    // For updating MSAA samples
-    const std::map<const char*, vk::SampleCountFlagBits>
-        SAMPLE_COUNT_MAP = {{"1 Sample", vk::SampleCountFlagBits::e1},
-                            {"2 Samples", vk::SampleCountFlagBits::e2},
-                            {"4 Samples", vk::SampleCountFlagBits::e4},
-                            {"8 Samples", vk::SampleCountFlagBits::e8},
-                            {"16 Samples", vk::SampleCountFlagBits::e16},
-                            {"32 Samples", vk::SampleCountFlagBits::e32},
-                            {"64 Samples", vk::SampleCountFlagBits::e64}};
-    const std::map<vk::SampleCountFlagBits, const char*>
-        REVERSE_SAMPLE_COUNT_MAP = {
-            {vk::SampleCountFlagBits::e1, "1 Sample"},
-            {vk::SampleCountFlagBits::e2, "2 Samples"},
-            {vk::SampleCountFlagBits::e4, "4 Samples"},
-            {vk::SampleCountFlagBits::e8, "8 Samples"},
-            {vk::SampleCountFlagBits::e16, "16 Samples"},
-            {vk::SampleCountFlagBits::e32, "32 Samples"},
-            {vk::SampleCountFlagBits::e64, "64 Samples"}};
-
-    bool should_update_samples = false;
-    auto msaa_samples = renderer_->GetCurrentSampleCount();
-    auto msaa_samples_str = REVERSE_SAMPLE_COUNT_MAP.at(msaa_samples);
-
-    ImGui_ImplVulkan_NewFrame();
-    ImGui_ImplGlfw_NewFrame();
-    ImGui::NewFrame();
-    if (ImGui::Begin("Stats", &imgui_display_)) {
-        uint32_t vertex_count = 0;
-        uint32_t tri_count = 0;
-        for (auto& obj : render_objects_) {
-            auto model = obj.GetModel();
-            if (!model) {
-                continue;
-            }
-            vertex_count += model->GetVertexCount();
-            tri_count += model->GetTriangleCount();
-        }
-
-        ImGui::Text("%u vertices", vertex_count);
-        ImGui::Text("%u triangles", tri_count);
-
-        auto extent = renderer_->GetSwapchain().GetExtent();
-        ImGui::Text("Framebuffer Size: %ux%u", extent.width, extent.height);
-
-        auto max_msaa_sample_count = renderer_->GetMaxSampleCount();
-        uint32_t max_msaa_sample_count_int = (uint32_t)max_msaa_sample_count;
-        ImGui::Text("Max MSAA Sample Count: %u", max_msaa_sample_count_int);
-
-        if (ImGui::BeginCombo("Current MSAA Sample Count", msaa_samples_str)) {
-            for (auto& map_entry : SAMPLE_COUNT_MAP) {
-                if (map_entry.second > max_msaa_sample_count) {
-                    break;
-                }
-                bool is_selected = map_entry.first == msaa_samples_str;
-                if (ImGui::Selectable(map_entry.first, is_selected)) {
-                    msaa_samples_str = map_entry.first;
-                    msaa_samples = map_entry.second;
-                    should_update_samples = true;
-                }
-                if (is_selected) {
-                    ImGui::SetItemDefaultFocus();
-                }
-            }
-            ImGui::EndCombo();
-        }
-        ImGui::Text("%.02f FPS", frames_per_second_);
-        ImGui::DragFloat("Rotation Rate", &rotation_rate_, 0.1f, -60.0f, 60.0f,
-                         "%.02f RPM", ImGuiSliderFlags_None);
-    }
-    ImGui::End();
-    ImGui::Render();
-    {
-        vk::CommandBufferBeginInfo begin_info(
-            vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
-        imgui_command_buffers_[image_index].begin(begin_info);
-        vk::ClearValue clear_value;
-        clear_value.color.setFloat32({{0.0f, 0.0f, 0.0f, 1.0f}});
-        vk::RenderPassBeginInfo imgui_pass(
-            imgui_render_pass_, imgui_frame_buffers_[image_index],
-            {{0, 0}, renderer_->GetSwapchain().GetExtent()}, clear_value);
-        imgui_command_buffers_[image_index].beginRenderPass(
-            imgui_pass, vk::SubpassContents::eInline);
-        ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(),
-                                        imgui_command_buffers_[image_index]);
-        imgui_command_buffers_[image_index].endRenderPass();
-        imgui_command_buffers_[image_index].end();
-    }
-
-    std::array<vk::CommandBuffer, 2> command_buffers_to_submit = {
-        {command_buffers_[image_index], imgui_command_buffers_[image_index]}};
-
-    vk::SubmitInfo submit_info(
-        frame_data_[current_frame_].image_available_semaphore,
-        wait_dest_stage_mask, command_buffers_to_submit,
-        frame_data_[current_frame_].render_finished_semaphore);
-
-    renderer_->GetDevice().resetFences(
-        frame_data_[current_frame_].in_flight_fence);
-
-    renderer_->GetGraphicsQueue().submit(
-        submit_info, frame_data_[current_frame_].in_flight_fence);
-
-    auto swapchain = renderer_->GetSwapchain().GetSwapchain();
-    vk::PresentInfoKHR present_info(
-        frame_data_[current_frame_].render_finished_semaphore, swapchain,
-        image_index, {});
-
-    vk::Result present_result = vk::Result::eSuccess;
-    try {
-        present_result = renderer_->GetPresentQueue().presentKHR(present_info);
-    } catch (vk::SystemError& e) {
-        if (e.code() == vk::Result::eErrorOutOfDateKHR) {
-            // this will recreate the swapchain below
-            present_result = vk::Result::eErrorOutOfDateKHR;
-        } else {
-            throw;
-        }
-    }
-
-    if (present_result == vk::Result::eSuboptimalKHR ||
-        present_result == vk::Result::eErrorOutOfDateKHR ||
-        framebuffer_resized_) {
-        framebuffer_resized_ = false;
-        RecreateSwapChain();
-    } else if (present_result != vk::Result::eSuccess) {
-        throw std::runtime_error("failed to present swap chain image!");
-    }
-
-    if (should_update_samples) {
-        renderer_->UpdateCurrentSampleCount(msaa_samples);
-    }
-
-    current_frame_ = (current_frame_ + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
 void Application::DrawScene(FrameData& frame_data, vk::Framebuffer& framebuffer,
@@ -532,152 +600,108 @@ void Application::DrawScene(FrameData& frame_data, vk::Framebuffer& framebuffer,
     command_buffer.end();
 }
 
-void Application::CleanupSwapChain()
+void Application::DrawGui(vk::Framebuffer& framebuffer,
+                          vk::CommandBuffer& command_buffer,
+                          vk::SampleCountFlagBits& msaa_samples)
 {
-    for (auto framebuffer : imgui_frame_buffers_) {
-        renderer_->GetDevice().destroyFramebuffer(framebuffer);
-    }
-    renderer_->GetDevice().freeCommandBuffers(imgui_command_pool_,
-                                              imgui_command_buffers_);
-
-    uniform_buffers_.clear();
-
-    renderer_->GetDevice().freeCommandBuffers(
-        renderer_->GetGraphicsCommandPool(), command_buffers_);
-}
-
-void Application::RecreateSwapChain()
-{
-    renderer_->RecreateSwapchain(window_);
-
-    CleanupSwapChain();
-
-    CreateCommandBuffers();
-
-    ImGui_ImplVulkan_SetMinImageCount(
-        renderer_->GetSwapchain().GetMinimumImageCount());
-    CreateImGuiCommandBuffers();
-    CreateImGuiFramebuffers();
-}
-
-void Application::UpdateCameraBuffer()
-{
-    auto extent = renderer_->GetSwapchain().GetExtent();
-    float aspect_ratio = extent.width / (float)extent.height;
-    camera_.SetAspectRatio(aspect_ratio);
-    auto pos = glm::vec3(
-        3.0f * glm::cos(glm::radians(current_model_rotation_degrees_)),
-        3.0f * glm::sin(glm::radians(current_model_rotation_degrees_)), 2.0f);
-    camera_.SetPosition(pos);
-    camera_.LookAt(glm::vec3(0.0f, 0.0f, 0.0f));
-    GpuCameraData camera = camera_.GetCameraData();
-
-    GpuCameraData old_camera;
-
-    auto& frame_data = frame_data_[current_frame_];
-
-    void* data = renderer_->GetDevice().mapMemory(
-        frame_data.camera_uniform_buffer->GetMemory(), 0, sizeof(camera));
-    memcpy(data, &camera, sizeof(GpuCameraData));
-    renderer_->GetDevice().unmapMemory(
-        frame_data.camera_uniform_buffer->GetMemory());
-}
-
-void Application::CreateCameraDescriptorSets()
-{
-    std::vector<vk::DescriptorSetLayout> layouts(
-        MAX_FRAMES_IN_FLIGHT, renderer_->GetCameraDescriptorSetLayout());
-    vk::DescriptorSetAllocateInfo alloc_info(renderer_->GetDescriptorPool(),
-                                             layouts);
-
-    auto camera_descriptor_sets =
-        renderer_->GetDevice().allocateDescriptorSets(alloc_info);
-
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-        auto& frame_data = frame_data_[i];
-        frame_data.camera_uniform_descriptor = camera_descriptor_sets[i];
-
-        // now write to the descriptor set
-        vk::DescriptorBufferInfo buffer_info(
-            frame_data.camera_uniform_buffer->GetBuffer(), 0,
-            sizeof(GpuCameraData));
-
-        std::array<vk::WriteDescriptorSet, 1> descriptor_writes = {
-            {{frame_data.camera_uniform_descriptor,
-              0,
-              0,
-              vk::DescriptorType::eUniformBuffer,
-              {},
-              buffer_info}}};
-
-        renderer_->GetDevice().updateDescriptorSets(descriptor_writes, {});
-    }
-}
-
-void Application::LoadScene()
-{
-    for (const auto& path : MODEL_PATHS) {
-        models_.emplace_back(renderer_.value(), path);
-    }
-
-    NonOwningPointer<SceneNode> root = scene_graph_.GetRoot();
-
-    {
-        render_objects_.emplace_back(*renderer_);
-        auto& obj1 = render_objects_.back();
-        auto scene_node1 = root->CreateChildNode();
-        scene_node1->SetTranslation(glm::vec3(-1.0, 0.0, 0.0));
-        obj1.SetModel(&models_.front());
-        scene_node1->SetRenderObject(&obj1);
-    }
-
-    {
-        render_objects_.emplace_back(*renderer_);
-        auto& obj2 = render_objects_.back();
-        auto scene_node2 = root->CreateChildNode();
-        scene_node2->SetTranslation(glm::vec3(1.0, 0.0, 0.0));
-        obj2.SetModel(&models_.front());
-        scene_node2->SetRenderObject(&obj2);
-    }
-
-    // Create camera node
-    {
-        auto camera_node = root->CreateChildNode();
-        camera_node->SetCamera(&camera_);
-    }
-}
-
-void Application::FindFontFile(std::string name)
-{
-    FcConfig* config = FcInitLoadConfigAndFonts();
-
-    // configure the search pattern,
-    // assume "name" is a std::string with the desired font name in it
-    FcPattern* pat = FcNameParse((const FcChar8*)(name.c_str()));
-    FcConfigSubstitute(config, pat, FcMatchPattern);
-    FcDefaultSubstitute(pat);
-
-    // find the font
-    FcResult res;
-    FcPattern* font = FcFontMatch(config, pat, &res);
-    if (font) {
-        FcChar8* file = NULL;
-        if (FcPatternGetString(font, FC_FILE, 0, &file) == FcResultMatch) {
-            // save the file to another std::string
-            font_file_ = (char*)file;
+    auto msaa_samples_str = REVERSE_SAMPLE_COUNT_MAP.at(msaa_samples);
+    ImGui_ImplVulkan_NewFrame();
+    ImGui_ImplGlfw_NewFrame();
+    ImGui::NewFrame();
+    if (ImGui::Begin("Stats", &imgui_display_)) {
+        uint32_t vertex_count = 0;
+        uint32_t tri_count = 0;
+        for (auto& obj : render_objects_) {
+            auto model = obj.GetModel();
+            if (!model) {
+                continue;
+            }
+            vertex_count += model->GetVertexCount();
+            tri_count += model->GetTriangleCount();
         }
-        FcPatternDestroy(font);
-    }
 
-    FcPatternDestroy(pat);
-    FcConfigDestroy(config);
+        ImGui::Text("%u vertices", vertex_count);
+        ImGui::Text("%u triangles", tri_count);
+
+        auto extent = renderer_->GetSwapchain().GetExtent();
+        ImGui::Text("Framebuffer Size: %ux%u", extent.width, extent.height);
+
+        auto max_msaa_sample_count = renderer_->GetMaxSampleCount();
+        uint32_t max_msaa_sample_count_int = (uint32_t)max_msaa_sample_count;
+        ImGui::Text("Max MSAA Sample Count: %u", max_msaa_sample_count_int);
+
+        if (ImGui::BeginCombo("Current MSAA Sample Count", msaa_samples_str)) {
+            for (auto& map_entry : SAMPLE_COUNT_MAP) {
+                if (map_entry.second > max_msaa_sample_count) {
+                    break;
+                }
+                bool is_selected = map_entry.first == msaa_samples_str;
+                if (ImGui::Selectable(map_entry.first, is_selected)) {
+                    msaa_samples_str = map_entry.first;
+                    msaa_samples = map_entry.second;
+                }
+                if (is_selected) {
+                    ImGui::SetItemDefaultFocus();
+                }
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::Text("%.02f FPS", current_frames_per_second_);
+        ImGui::PlotLines("FPS Graph", frames_per_second_data_.data(),
+                         frames_per_second_data_.size(), 0, nullptr, 0.0f);
+        ImGui::DragFloat("Rotation Rate", &rotation_rate_, 0.1f, -60.0f, 60.0f,
+                         "%.02f RPM", ImGuiSliderFlags_None);
+    }
+    ImGui::End();
+    ImGui::Render();
+    vk::CommandBufferBeginInfo begin_info(
+        vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
+    command_buffer.begin(begin_info);
+    vk::ClearValue clear_value;
+    clear_value.color.setFloat32({{0.0f, 0.0f, 0.0f, 1.0f}});
+    vk::RenderPassBeginInfo imgui_pass(
+        imgui_render_pass_, framebuffer,
+        {{0, 0}, renderer_->GetSwapchain().GetExtent()}, clear_value);
+    command_buffer.beginRenderPass(imgui_pass, vk::SubpassContents::eInline);
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), command_buffer);
+    command_buffer.endRenderPass();
+    command_buffer.end();
 }
 
-static void check_vk_result(VkResult err)
+void Application::SubmitGraphicsCommands(std::array<vk::CommandBuffer, 2> command_buffers)
 {
-    if (err == 0) return;
-    fprintf(stderr, "[vulkan] Error: VkResult = %d\n", err);
-    if (err < 0) abort();
+    vk::PipelineStageFlags wait_dest_stage_mask =
+        vk::PipelineStageFlagBits::eColorAttachmentOutput;
+
+    vk::SubmitInfo submit_info(
+        frame_data_[current_frame_].image_available_semaphore,
+        wait_dest_stage_mask, command_buffers,
+        frame_data_[current_frame_].render_finished_semaphore);
+
+    renderer_->GetDevice().resetFences(
+        frame_data_[current_frame_].in_flight_fence);
+
+    renderer_->GetGraphicsQueue().submit(
+        submit_info, frame_data_[current_frame_].in_flight_fence);
+}
+
+void Application::Present(uint32_t image_index)
+{
+    auto swapchain = renderer_->GetSwapchain().GetSwapchain();
+    vk::PresentInfoKHR present_info(
+        frame_data_[current_frame_].render_finished_semaphore, swapchain,
+        image_index, {});
+
+    vk::Result present_result = renderer_->Present(present_info);
+
+    if (present_result == vk::Result::eSuboptimalKHR ||
+        present_result == vk::Result::eErrorOutOfDateKHR ||
+        framebuffer_resized_) {
+        framebuffer_resized_ = false;
+        RecreateSwapChain();
+    } else if (present_result != vk::Result::eSuccess) {
+        throw std::runtime_error("failed to present swap chain image!");
+    }
 }
 
 void Application::SetupImgui()
@@ -775,6 +799,32 @@ void Application::SetupImgui()
     ResizeImGui();
 }
 
+void Application::FindFontFile(std::string name)
+{
+    FcConfig* config = FcInitLoadConfigAndFonts();
+
+    // configure the search pattern,
+    // assume "name" is a std::string with the desired font name in it
+    FcPattern* pat = FcNameParse((const FcChar8*)(name.c_str()));
+    FcConfigSubstitute(config, pat, FcMatchPattern);
+    FcDefaultSubstitute(pat);
+
+    // find the font
+    FcResult res;
+    FcPattern* font = FcFontMatch(config, pat, &res);
+    if (font) {
+        FcChar8* file = NULL;
+        if (FcPatternGetString(font, FC_FILE, 0, &file) == FcResultMatch) {
+            // save the file to another std::string
+            font_file_ = (char*)file;
+        }
+        FcPatternDestroy(font);
+    }
+
+    FcPatternDestroy(pat);
+    FcConfigDestroy(config);
+}
+
 void Application::CreateImGuiFramebuffers()
 {
     auto image_count = renderer_->GetSwapchain().GetActualImageCount();
@@ -813,16 +863,6 @@ void Application::ResizeImGui()
 
     ImGui::StyleColorsDark(&imgui_style_);
     imgui_style_.ScaleAllSizes(window_scaling_);
-}
-
-void Application::Update(float delta_time)
-{
-    // rotation_rate_ = RPM
-    // RPS = RPM * 60
-    current_model_rotation_degrees_ =
-        delta_time * rotation_rate_ * 60 + current_model_rotation_degrees_;
-    current_model_rotation_degrees_ =
-        std::fmod(current_model_rotation_degrees_, 360.0f);
 }
 
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE

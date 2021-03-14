@@ -82,6 +82,22 @@ std::vector<uint32_t> CompileShader(const std::string& path,
     return vertexSPRV;
 }
 
+const bool CheckExtensions(
+    const std::vector<vk::ExtensionProperties> supported_extensions,
+    std::vector<const char*> required_extensions)
+{
+    for (const auto extension_name : required_extensions) {
+        if (std::find_if(supported_extensions.begin(),
+                         supported_extensions.end(), [&extension_name](auto e) {
+                             return strcmp(e.extensionName, extension_name) ==
+                                    0;
+                         }) == supported_extensions.end()) {
+            return false;
+        }
+    }
+    return true;
+}
+
 uint32_t FindMemoryType(vk::PhysicalDevice& physical_device,
                         uint32_t type_filter,
                         vk::MemoryPropertyFlags properties)

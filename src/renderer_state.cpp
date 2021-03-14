@@ -213,6 +213,23 @@ RendererState::QueueFamilyIndices RendererState::GetQueueFamilies()
     return queue_families_;
 }
 
+vk::Result RendererState::Present(vk::PresentInfoKHR present_info)
+{
+    vk::Result present_result = vk::Result::eSuccess;
+    try {
+        present_result = present_queue_.presentKHR(present_info);
+    } catch (vk::SystemError& e) {
+        if (e.code() == vk::Result::eErrorOutOfDateKHR) {
+            // this will trigger the application to recreate the swapchain
+            present_result = vk::Result::eErrorOutOfDateKHR;
+        } else {
+            throw;
+        }
+    }
+
+    return present_result;
+}
+
 vk::CommandBuffer RendererState::BeginSingleTimeCommands()
 {
     vk::CommandBufferAllocateInfo alloc_info(

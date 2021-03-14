@@ -97,6 +97,8 @@ public:
 
     QueueFamilyIndices GetQueueFamilies();
 
+    vk::Result Present(vk::PresentInfoKHR present_info);
+
 private:
     bool CheckValidationLayerSupport(const std::vector<const char*>& layers);
 
