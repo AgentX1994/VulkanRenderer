@@ -173,10 +173,11 @@ void Application::Update(float delta_time)
 {
     // rotation_rate_ = RPM
     // RPS = RPM * 60
-    current_model_rotation_degrees_ =
-        delta_time * rotation_rate_ * 60 + current_model_rotation_degrees_;
-    current_model_rotation_degrees_ =
-        std::fmod(current_model_rotation_degrees_, 360.0f);
+    current_camera_rotation_degrees_ =
+        delta_time * rotation_rate_ * 60 + current_camera_rotation_degrees_;
+    current_camera_rotation_degrees_ =
+        std::fmod(current_camera_rotation_degrees_, 360.0f);
+    UpdateRotatingCamera();
 }
 
 void Application::Render()
@@ -397,6 +398,13 @@ void Application::RecreateSwapChain()
         renderer_->GetSwapchain().GetMinimumImageCount());
     CreateImGuiCommandBuffers();
     CreateImGuiFramebuffers();
+
+    // Update camera aspect ratios
+    auto extent = renderer_->GetSwapchain().GetExtent();
+    float aspect_ratio = extent.width / (float)extent.height;
+    for (auto& cam : cameras_) {
+        cam.SetAspectRatio(aspect_ratio);
+    }
 }
 
 void Application::CreateCameraDescriptorSets()
@@ -432,15 +440,7 @@ void Application::CreateCameraDescriptorSets()
 
 void Application::UpdateCameraUniformBuffer()
 {
-    auto extent = renderer_->GetSwapchain().GetExtent();
-    float aspect_ratio = extent.width / (float)extent.height;
-    camera_.SetAspectRatio(aspect_ratio);
-    auto pos = glm::vec3(
-        3.0f * glm::cos(glm::radians(current_model_rotation_degrees_)),
-        3.0f * glm::sin(glm::radians(current_model_rotation_degrees_)), 2.0f);
-    camera_.SetPosition(pos);
-    camera_.LookAt(glm::vec3(0.0f, 0.0f, 0.0f));
-    GpuCameraData camera = camera_.GetCameraData();
+    GpuCameraData camera = active_camera_->GetCameraData();
 
     auto& frame_data = frame_data_[current_frame_];
 
@@ -477,11 +477,33 @@ void Application::LoadScene()
         scene_node2->SetRenderObject(&obj2);
     }
 
-    // Create camera node
+    // Create camera nodes
+    auto extent = renderer_->GetSwapchain().GetExtent();
+    float aspect_ratio = extent.width / (float)extent.height;
     {
+        rotating_camera_ = &cameras_[0];
         auto camera_node = root->CreateChildNode();
-        camera_node->SetCamera(&camera_);
+        camera_node->SetCamera(rotating_camera_);
+        rotating_camera_->SetAspectRatio(aspect_ratio);
     }
+    {
+        stationary_camera_ = &cameras_[1];
+        auto camera_node = root->CreateChildNode();
+        camera_node->SetCamera(stationary_camera_);
+        stationary_camera_->SetPosition({2, 2, 2});
+        stationary_camera_->LookAt(stationary_camera_look_at_point_);
+        stationary_camera_->SetAspectRatio(aspect_ratio);
+    }
+    active_camera_ = rotating_camera_;
+}
+
+void Application::UpdateRotatingCamera()
+{
+    auto pos = glm::vec3(
+        3.0f * glm::cos(glm::radians(current_camera_rotation_degrees_)),
+        3.0f * glm::sin(glm::radians(current_camera_rotation_degrees_)), 2.0f);
+    rotating_camera_->SetPosition(pos);
+    rotating_camera_->LookAt(glm::vec3(0.0f, 0.0f, 0.0f));
 }
 
 void Application::WaitForNextFrameFence()
@@ -623,6 +645,39 @@ void Application::DrawGui(vk::Framebuffer& framebuffer,
         ImGui::Text("%u vertices", vertex_count);
         ImGui::Text("%u triangles", tri_count);
 
+        if (ImGui::TreeNode("Camera")) {
+            ImGui::Text("Camera Type");
+            if (ImGui::RadioButton("Rotating",
+                                   active_camera_ == rotating_camera_)) {
+                active_camera_ = rotating_camera_;
+            }
+            ImGui::SameLine();
+            if (ImGui::RadioButton("Stationary",
+                                   active_camera_ == stationary_camera_)) {
+                active_camera_ = stationary_camera_;
+            }
+
+            if (ImGui::TreeNode("Properties")) {
+                if (active_camera_ == rotating_camera_) {
+                    ImGui::DragFloat("Camera Rotation Rate", &rotation_rate_,
+                                     0.1f, -60.0f, 60.0f, "%.02f RPM",
+                                     ImGuiSliderFlags_None);
+                } else if (active_camera_ == stationary_camera_) {
+                    glm::vec3 pos =
+                        stationary_camera_->GetNode()->GetTranslation();
+                    ImGui::SliderFloat3("Position", &pos[0], -5.0, 5.0);
+                    ImGui::SliderFloat3("Look At",
+                                        &stationary_camera_look_at_point_[0],
+                                        -5.0, 5.0);
+                    stationary_camera_->SetPosition(pos);
+                    stationary_camera_->LookAt(
+                        stationary_camera_look_at_point_);
+                }
+                ImGui::TreePop();
+            }
+            ImGui::TreePop();
+        }
+
         auto extent = renderer_->GetSwapchain().GetExtent();
         ImGui::Text("Framebuffer Size: %ux%u", extent.width, extent.height);
 
@@ -649,8 +704,6 @@ void Application::DrawGui(vk::Framebuffer& framebuffer,
         ImGui::Text("%.02f FPS", current_frames_per_second_);
         ImGui::PlotLines("FPS Graph", frames_per_second_data_.data(),
                          frames_per_second_data_.size(), 0, nullptr, 0.0f);
-        ImGui::DragFloat("Rotation Rate", &rotation_rate_, 0.1f, -60.0f, 60.0f,
-                         "%.02f RPM", ImGuiSliderFlags_None);
     }
     ImGui::End();
     ImGui::Render();
@@ -668,7 +721,8 @@ void Application::DrawGui(vk::Framebuffer& framebuffer,
     command_buffer.end();
 }
 
-void Application::SubmitGraphicsCommands(std::array<vk::CommandBuffer, 2> command_buffers)
+void Application::SubmitGraphicsCommands(
+    std::array<vk::CommandBuffer, 2> command_buffers)
 {
     vk::PipelineStageFlags wait_dest_stage_mask =
         vk::PipelineStageFlagBits::eColorAttachmentOutput;

@@ -63,6 +63,7 @@ private:
     void LoadScene();
 
     // Update functions
+    void UpdateRotatingCamera();
 
     // Rendering functions
     void WaitForNextFrameFence();
@@ -94,7 +95,13 @@ private:
     SceneGraph scene_graph_;
     std::vector<Model> models_;
     std::vector<RenderObject> render_objects_;
-    Camera camera_;
+
+    // Camera details
+    std::array<Camera,2> cameras_;
+    NonOwningPointer<Camera> rotating_camera_; //< cameras_[0], rotates around scene
+    NonOwningPointer<Camera> stationary_camera_; //< cameras_[1], stationary
+    glm::vec3 stationary_camera_look_at_point_ = {0.0f, 0.0f, 0.0f}; //< stationary camera's target point
+    NonOwningPointer<Camera> active_camera_; //< Whichever camera is active
 
     // Command buffers (one per swapchain image)
     std::vector<vk::CommandBuffer> command_buffers_;
@@ -131,7 +138,7 @@ private:
     // Rotation rate of the camera
     float rotation_rate_ = 1.0f;
     // Current rotation of the camera
-    float current_model_rotation_degrees_ = 0.0f;
+    float current_camera_rotation_degrees_ = 0.0f;
 
     // Vulkan debug messenger (unused)
     vk::DebugUtilsMessengerEXT debug_messenger_;
