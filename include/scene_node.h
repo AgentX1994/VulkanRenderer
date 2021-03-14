@@ -5,6 +5,7 @@
 
 class SceneGraph;
 class RenderObject;
+class Camera;
 
 class SceneNode
 {
@@ -18,18 +19,28 @@ public:
     void SetParent(NonOwningPointer<SceneNode> new_parent);
     
     void SetTranslation(glm::vec3 translation);
-    void SetRotation(glm::quat rotation);
-    void SetScale(glm::vec3 scale);
+    glm::vec3 GetTranslation() const;
 
-    glm::mat4& GetTransform();
+    void SetRotation(glm::quat rotation);
+    glm::quat GetRotation() const;
+
+    void SetScale(glm::vec3 scale);
+    glm::vec3 GetScale() const;
+
+    void SetLookAt(glm::vec3 point, glm::vec3 up = glm::vec3(0.0f, 0.0f, 1.0f));
+
+    glm::mat4 GetTransform() const;
 
     void SetRenderObject(NonOwningPointer<RenderObject> render_object);
-    NonOwningPointer<RenderObject> GetRenderObject();
+    NonOwningPointer<RenderObject> GetRenderObject() const;
+
+    void SetCamera(NonOwningPointer<Camera> camera);
+    NonOwningPointer<Camera> GetCamera() const;
 
     NonOwningPointer<SceneNode> CreateChildNode();
 
 private:
-    void UpdateCachedTransform();
+    void UpdateCachedTransform() const;
 
     SceneGraph& owner_;
     NonOwningPointer<SceneNode> parent_;
@@ -40,8 +51,9 @@ private:
 
     std::vector<NonOwningPointer<SceneNode>> children_;
 
-    bool transform_dirty_;
-    glm::mat4 cached_transform_;
+    mutable bool transform_dirty_;
+    mutable glm::mat4 cached_transform_;
 
     NonOwningPointer<RenderObject> render_object_;
+    NonOwningPointer<Camera> camera_;
 };

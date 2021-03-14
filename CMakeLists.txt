@@ -33,6 +33,7 @@ add_executable(VulkanTest
   src/scene_graph.cpp
   src/scene_node.cpp
   src/render_object.cpp
+  src/camera.cpp
   src/material.cpp
   src/texture.cpp
   src/material_cache.cpp

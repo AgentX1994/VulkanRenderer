@@ -563,18 +563,16 @@ void Application::RecreateSwapChain()
 void Application::UpdateCameraBuffer()
 {
     auto extent = renderer_->GetSwapchain().GetExtent();
-    GpuCameraData camera{};
+    float aspect_ratio = extent.width / (float)extent.height;
+    camera_.SetAspectRatio(aspect_ratio);
     auto pos = glm::vec3(
         3.0f * glm::cos(glm::radians(current_model_rotation_degrees_)),
         3.0f * glm::sin(glm::radians(current_model_rotation_degrees_)), 2.0f);
-    camera.view = glm::lookAt(pos, glm::vec3(0.0f, 0.0f, 0.0f),
-                              glm::vec3(0.0f, 0.0f, 1.0f));
-    camera.proj = glm::perspective(
-        glm::radians(45.0f), extent.width / (float)extent.height, 0.1f, 10.0f);
-    // compensate for incorect y coordinate in clipping space (OpenGL has it
-    // flipped compared to Vulkan)
-    camera.proj[1][1] *= -1;
-    camera.viewproj = camera.proj * camera.view;
+    camera_.SetPosition(pos);
+    camera_.LookAt(glm::vec3(0.0f, 0.0f, 0.0f));
+    GpuCameraData camera = camera_.GetCameraData();
+
+    GpuCameraData old_camera;
 
     auto& frame_data = frame_data_[current_frame_];
 
@@ -640,6 +638,12 @@ void Application::LoadScene()
         scene_node2->SetTranslation(glm::vec3(1.0, 0.0, 0.0));
         obj2.SetModel(&models_.front());
         scene_node2->SetRenderObject(&obj2);
+    }
+
+    // Create camera node
+    {
+        auto camera_node = root->CreateChildNode();
+        camera_node->SetCamera(&camera_);
     }
 }
 

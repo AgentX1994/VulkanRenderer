@@ -1,5 +1,6 @@
 #include "scene_node.h"
 
+#include "camera.h"
 #include "common.h"
 #include "common_vulkan.h"
 #include "render_object.h"
@@ -27,11 +28,16 @@ void SceneNode::SetParent(NonOwningPointer<SceneNode> new_parent)
     parent_ = new_parent;
     transform_dirty_ = true;
 }
-    
+
 void SceneNode::SetTranslation(glm::vec3 translation)
 {
     parent_relative_translation_ = translation;
     transform_dirty_ = true;
+}
+
+glm::vec3 SceneNode::GetTranslation() const
+{
+    return parent_relative_translation_;
 }
 
 void SceneNode::SetRotation(glm::quat rotation)
@@ -40,13 +46,24 @@ void SceneNode::SetRotation(glm::quat rotation)
     transform_dirty_ = true;
 }
 
+glm::quat SceneNode::GetRotation() const { return parent_relative_rotation_; }
+
 void SceneNode::SetScale(glm::vec3 scale)
 {
     parent_relative_scale_ = scale;
     transform_dirty_ = true;
 }
 
-glm::mat4& SceneNode::GetTransform()
+glm::vec3 SceneNode::GetScale() const { return parent_relative_scale_; }
+
+void SceneNode::SetLookAt(glm::vec3 point, glm::vec3 up)
+{
+    glm::mat4 transform = glm::lookAt(parent_relative_translation_, point, up);
+    parent_relative_rotation_ = glm::conjugate(glm::toQuat(transform));
+    transform_dirty_ = true;
+}
+
+glm::mat4 SceneNode::GetTransform() const
 {
     if (transform_dirty_) {
         UpdateCachedTransform();
@@ -62,10 +79,20 @@ void SceneNode::SetRenderObject(NonOwningPointer<RenderObject> render_object)
     }
 }
 
-NonOwningPointer<RenderObject> SceneNode::GetRenderObject()
+NonOwningPointer<RenderObject> SceneNode::GetRenderObject() const
 {
     return render_object_;
 }
+
+void SceneNode::SetCamera(NonOwningPointer<Camera> camera)
+{
+    camera_ = camera;
+    if (camera_) {
+        camera_->SetNode(this);
+    }
+}
+
+NonOwningPointer<Camera> SceneNode::GetCamera() const { return camera_; }
 
 NonOwningPointer<SceneNode> SceneNode::CreateChildNode()
 {
@@ -75,13 +102,15 @@ NonOwningPointer<SceneNode> SceneNode::CreateChildNode()
     return new_node;
 }
 
-void SceneNode::UpdateCachedTransform()
+void SceneNode::UpdateCachedTransform() const
 {
     glm::mat4 parent_relative_transform = glm::mat4(1);
     // construct the transform
-    parent_relative_transform = glm::translate(parent_relative_transform, parent_relative_translation_);
+    parent_relative_transform =
+        glm::translate(parent_relative_transform, parent_relative_translation_);
     parent_relative_transform *= glm::toMat4(parent_relative_rotation_);
-    parent_relative_transform = glm::scale(parent_relative_transform, parent_relative_scale_);
+    parent_relative_transform =
+        glm::scale(parent_relative_transform, parent_relative_scale_);
 
     if (!parent_) {
         cached_transform_ = parent_relative_transform;

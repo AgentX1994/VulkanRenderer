@@ -12,6 +12,7 @@
 #include "texture.h"
 #include "scene_graph.h"
 #include "render_object.h"
+#include "camera.h"
 
 constexpr size_t MAX_FRAMES_IN_FLIGHT = 2;
 
@@ -64,6 +65,7 @@ private:
     SceneGraph scene_graph_;
     std::vector<Model> models_;
     std::vector<RenderObject> render_objects_;
+    Camera camera_;
 
     std::vector<GpuBuffer> uniform_buffers_;
 
