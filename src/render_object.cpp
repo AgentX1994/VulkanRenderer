@@ -7,11 +7,12 @@
 
 RenderObject::RenderObject(RendererState& renderer)
     : device_(renderer.GetDevice()),
-      object_properties_buffer_(
-          renderer,
-          sizeof(GpuObjectData), vk::BufferUsageFlagBits::eUniformBuffer,
-                 vk::MemoryPropertyFlagBits::eHostVisible |
-                     vk::MemoryPropertyFlagBits::eHostCoherent)
+      owning_node_(nullptr),
+      model_(nullptr),
+      object_properties_buffer_(renderer, sizeof(GpuObjectData),
+                                vk::BufferUsageFlagBits::eUniformBuffer,
+                                vk::MemoryPropertyFlagBits::eHostVisible |
+                                    vk::MemoryPropertyFlagBits::eHostCoherent)
 {
     CreateDescriptorSet(renderer);
     UpdateTransform();
