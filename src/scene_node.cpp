@@ -40,6 +40,12 @@ glm::vec3 SceneNode::GetTranslation() const
     return parent_relative_translation_;
 }
 
+void SceneNode::Translate(glm::vec3 translation)
+{
+    parent_relative_translation_ += translation;
+    transform_dirty_ = true;
+}
+
 void SceneNode::SetRotation(glm::quat rotation)
 {
     parent_relative_rotation_ = rotation;
@@ -47,6 +53,18 @@ void SceneNode::SetRotation(glm::quat rotation)
 }
 
 glm::quat SceneNode::GetRotation() const { return parent_relative_rotation_; }
+
+void SceneNode::Rotate(glm::quat rotation)
+{
+    parent_relative_rotation_ *= rotation;
+    transform_dirty_ = true;
+}
+
+glm::vec3 SceneNode::RotateVector(glm::vec3 v) const
+{
+    // GLM implements quat::operator*(vec3) as rotation
+    return parent_relative_rotation_ * v;
+}
 
 void SceneNode::SetScale(glm::vec3 scale)
 {

@@ -19,7 +19,8 @@ RendererState::RendererState(
 
     physical_device_ = CreatePhysicalDevice(required_device_extensions);
     max_msaa_samples_ = GetMaxUsableSampleCount();
-    current_msaa_samples_ = max_msaa_samples_;
+    // Default to 1 sample
+    current_msaa_samples_ = vk::SampleCountFlagBits::e1;
 
     queue_families_ = FindQueueFamilies(physical_device_);
 

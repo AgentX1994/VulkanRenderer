@@ -5,15 +5,18 @@
 
 class SceneNode;
 
-struct GpuCameraData {
+struct GpuCameraData
+{
     alignas(16) glm::mat4 view;
     alignas(16) glm::mat4 proj;
     alignas(16) glm::mat4 viewproj;
 };
 
-class Camera {
+class Camera
+{
 public:
-    Camera(float fov = 45.0f, float aspect_ratio = 16.0/9.0, float near_z = 0.1f, float far_z = 10.0f);
+    Camera(float fov = 45.0f, float aspect_ratio = 16.0 / 9.0,
+           float near_z = 0.1f, float far_z = 10.0f);
 
     void SetFov(float fov);
     float GetFov() const;
@@ -31,7 +34,17 @@ public:
     NonOwningPointer<SceneNode> GetNode() const;
 
     void SetPosition(glm::vec3 pos);
+    void Move(glm::vec3 translation);
+
+    void MoveForward(float amount);
+    void MoveRight(float amount);
+    void MoveUp(float amount);
+
+    glm::vec3 GetUpVector() const;
+    glm::vec3 GetRightVector() const;
+
     void LookAt(glm::vec3 point, glm::vec3 up = glm::vec3(0.0f, 0.0f, 1.0f));
+    void Rotate(glm::quat rotation);
 
     GpuCameraData GetCameraData() const;
 

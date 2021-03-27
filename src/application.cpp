@@ -118,7 +118,47 @@ struct GlfwCallbacks
             reinterpret_cast<Application*>(glfwGetWindowUserPointer(window));
         app->SetRenderScaling(xscale);
     }
+
+    static void KeyCallback(GLFWwindow* window, int key, int scancode,
+                            int action, int mods)
+    {
+        auto app =
+            reinterpret_cast<Application*>(glfwGetWindowUserPointer(window));
+        Input::GlfwCallbacks::KeyCallback(&app->input_.value(), key, scancode,
+                                          action, mods);
+    }
+
+    static void MouseCallback(GLFWwindow* window, double xpos, double ypos)
+    {
+        auto app =
+            reinterpret_cast<Application*>(glfwGetWindowUserPointer(window));
+        Input::GlfwCallbacks::MouseCallback(&app->input_.value(), xpos, ypos);
+    }
+    static void MouseEnterCallback(GLFWwindow* window, int entered)
+    {
+        auto app =
+            reinterpret_cast<Application*>(glfwGetWindowUserPointer(window));
+        Input::GlfwCallbacks::MouseEnterCallback(&app->input_.value(),
+                                                 entered != 0);
+    }
 };
+
+static void SetCaptureCursor(GLFWwindow* window, bool capture)
+{
+    if (capture) {
+        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+        if (glfwRawMouseMotionSupported()) {
+            glfwSetInputMode(window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
+        }
+    } else {
+        if (glfwRawMouseMotionSupported()) {
+            glfwSetInputMode(window, GLFW_RAW_MOUSE_MOTION, GLFW_FALSE);
+        }
+        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+        // prevent jump when going back to normal mode
+        GlfwCallbacks::MouseEnterCallback(window, true);
+    }
+}
 
 void Application::Run()
 {
@@ -139,7 +179,21 @@ void Application::MainLoop()
 {
     double previous_time = glfwGetTime();
     while (!glfwWindowShouldClose(window_)) {
-        glfwPollEvents();
+        // Calls glfwPollEvents for us
+        input_->Poll();
+        if (input_->GetActionInputState(InputAction::Quit)) {
+            break;
+        }
+
+        if (input_->GetActionInputState(InputAction::ToggleImgui)) {
+            if (!imgui_toggle_pressed_last_frame_) {
+                imgui_display_ ^= true;
+                SetCaptureCursor(window_, !imgui_display_);
+            }
+            imgui_toggle_pressed_last_frame_ = true;
+        } else {
+            imgui_toggle_pressed_last_frame_ = false;
+        }
 
         // Get how much time the last frame took
         double current_time = glfwGetTime();
@@ -169,15 +223,10 @@ void Application::MainLoop()
     renderer_->GetDevice().waitIdle();
 }
 
-void Application::Update(float delta_time)
+void Application::Update(double delta_time)
 {
-    // rotation_rate_ = RPM
-    // RPS = RPM * 60
-    current_camera_rotation_degrees_ =
-        delta_time * rotation_rate_ * 60 + current_camera_rotation_degrees_;
-    current_camera_rotation_degrees_ =
-        std::fmod(current_camera_rotation_degrees_, 360.0f);
-    UpdateRotatingCamera();
+    UpdateRotatingCamera(delta_time);
+    UpdateControlledCamera(delta_time);
 }
 
 void Application::Render()
@@ -206,8 +255,8 @@ void Application::Render()
     bool should_update_samples =
         msaa_samples != renderer_->GetCurrentSampleCount();
 
-    std::array<vk::CommandBuffer, 2> command_buffers_to_submit = {
-        {command_buffers_[image_index], imgui_command_buffers_[image_index]}};
+    std::vector<vk::CommandBuffer> command_buffers_to_submit = {
+        command_buffers_[image_index], imgui_command_buffers_[image_index]};
 
     SubmitGraphicsCommands(command_buffers_to_submit);
 
@@ -284,6 +333,14 @@ void Application::InitWindow()
                                    GlfwCallbacks::FramebufferResizeCallback);
     glfwSetWindowContentScaleCallback(
         window_, GlfwCallbacks::WindowContentScaleCallback);
+
+    // Now that GLFW is initialized, create the input
+    input_.emplace(window_);
+    glfwSetKeyCallback(window_, GlfwCallbacks::KeyCallback);
+    glfwSetCursorPosCallback(window_, GlfwCallbacks::MouseCallback);
+    glfwSetCursorEnterCallback(window_, GlfwCallbacks::MouseEnterCallback);
+
+    SetCaptureCursor(window_, !imgui_display_);
 }
 
 void Application::SetFramebufferResized() { framebuffer_resized_ = true; }
@@ -487,23 +544,82 @@ void Application::LoadScene()
         rotating_camera_->SetAspectRatio(aspect_ratio);
     }
     {
-        stationary_camera_ = &cameras_[1];
+        controlled_camera_ = &cameras_[1];
         auto camera_node = root->CreateChildNode();
-        camera_node->SetCamera(stationary_camera_);
-        stationary_camera_->SetPosition({2, 2, 2});
-        stationary_camera_->LookAt(stationary_camera_look_at_point_);
-        stationary_camera_->SetAspectRatio(aspect_ratio);
+        camera_node->SetCamera(controlled_camera_);
+        controlled_camera_->SetPosition({2.0, 2.0, 2.0});
+        controlled_camera_->LookAt({0.0, 0.0, 0.0});
+        controlled_camera_->SetAspectRatio(aspect_ratio);
     }
-    active_camera_ = rotating_camera_;
+    active_camera_ = controlled_camera_;
 }
 
-void Application::UpdateRotatingCamera()
+void Application::UpdateRotatingCamera(double delta_time)
 {
     auto pos = glm::vec3(
         3.0f * glm::cos(glm::radians(current_camera_rotation_degrees_)),
         3.0f * glm::sin(glm::radians(current_camera_rotation_degrees_)), 2.0f);
     rotating_camera_->SetPosition(pos);
     rotating_camera_->LookAt(glm::vec3(0.0f, 0.0f, 0.0f));
+    // rotation_rate_ = RPM
+    // RPS = RPM * 60
+    current_camera_rotation_degrees_ =
+        delta_time * rotation_rate_ * 60 + current_camera_rotation_degrees_;
+    current_camera_rotation_degrees_ =
+        std::fmod(current_camera_rotation_degrees_, 360.0f);
+}
+
+void Application::UpdateControlledCamera(double delta_time)
+{
+    if (active_camera_ != controlled_camera_) {
+        return;
+    }
+
+    // Movement
+    float camera_speed = delta_time * camera_movement_speed_;
+    float roll_speed = delta_time * camera_roll_speed_;
+    if (input_->GetActionInputState(InputAction::Slow)) {
+        camera_speed *= slowdown_factor_;
+        roll_speed *= slowdown_factor_;
+    }
+    if (input_->GetActionInputState(InputAction::MoveForward)) {
+        controlled_camera_->MoveForward(camera_speed);
+    } else if (input_->GetActionInputState(InputAction::MoveBackward)) {
+        controlled_camera_->MoveForward(-camera_speed);
+    }
+
+    if (input_->GetActionInputState(InputAction::MoveRight)) {
+        controlled_camera_->MoveRight(camera_speed);
+    } else if (input_->GetActionInputState(InputAction::MoveLeft)) {
+        controlled_camera_->MoveRight(-camera_speed);
+    }
+
+    if (input_->GetActionInputState(InputAction::MoveUp)) {
+        controlled_camera_->MoveUp(camera_speed);
+    } else if (input_->GetActionInputState(InputAction::MoveDown)) {
+        controlled_camera_->MoveUp(-camera_speed);
+    }
+
+    float roll_movement = 0.0f;
+    if (input_->GetActionInputState(InputAction::RollRight)) {
+        roll_movement = -roll_speed;
+    } else if (input_->GetActionInputState(InputAction::RollLeft)) {
+        roll_movement = roll_speed;
+    }
+
+    // Rotation
+    auto mouse_movement = (float)delta_time * input_->GetMouseMovement();
+    glm::quat x_rotation = glm::angleAxis(glm::radians(-mouse_movement.x),
+                                          glm::vec3(0.0f, 1.0f, 0.0f));
+    glm::quat y_rotation = glm::angleAxis(glm::radians(mouse_movement.y),
+                                          glm::vec3(1.0f, 0.0f, 0.0f));
+    glm::quat z_rotation = glm::angleAxis(glm::radians(roll_movement),
+                                          glm::vec3(0.0f, 0.0f, 1.0f));
+
+    // x and y are independent, so we can just multiply them together to compose
+    // them (I think...)
+    glm::quat rotation = x_rotation * y_rotation * z_rotation;
+    controlled_camera_->Rotate(rotation);
 }
 
 void Application::WaitForNextFrameFence()
@@ -630,82 +746,105 @@ void Application::DrawGui(vk::Framebuffer& framebuffer,
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
-    if (ImGui::Begin("Stats", &imgui_display_)) {
-        uint32_t vertex_count = 0;
-        uint32_t tri_count = 0;
-        for (auto& obj : render_objects_) {
-            auto model = obj.GetModel();
-            if (!model) {
-                continue;
-            }
-            vertex_count += model->GetVertexCount();
-            tri_count += model->GetTriangleCount();
-        }
-
-        ImGui::Text("%u vertices", vertex_count);
-        ImGui::Text("%u triangles", tri_count);
-
-        if (ImGui::TreeNode("Camera")) {
-            ImGui::Text("Camera Type");
-            if (ImGui::RadioButton("Rotating",
-                                   active_camera_ == rotating_camera_)) {
-                active_camera_ = rotating_camera_;
-            }
-            ImGui::SameLine();
-            if (ImGui::RadioButton("Stationary",
-                                   active_camera_ == stationary_camera_)) {
-                active_camera_ = stationary_camera_;
+    if (imgui_display_) {
+        if (ImGui::Begin("Stats", &imgui_display_)) {
+            uint32_t vertex_count = 0;
+            uint32_t tri_count = 0;
+            for (auto& obj : render_objects_) {
+                auto model = obj.GetModel();
+                if (!model) {
+                    continue;
+                }
+                vertex_count += model->GetVertexCount();
+                tri_count += model->GetTriangleCount();
             }
 
-            if (ImGui::TreeNode("Properties")) {
-                if (active_camera_ == rotating_camera_) {
-                    ImGui::DragFloat("Camera Rotation Rate", &rotation_rate_,
-                                     0.1f, -60.0f, 60.0f, "%.02f RPM",
-                                     ImGuiSliderFlags_None);
-                } else if (active_camera_ == stationary_camera_) {
-                    glm::vec3 pos =
-                        stationary_camera_->GetNode()->GetTranslation();
-                    ImGui::SliderFloat3("Position", &pos[0], -5.0, 5.0);
-                    ImGui::SliderFloat3("Look At",
-                                        &stationary_camera_look_at_point_[0],
-                                        -5.0, 5.0);
-                    stationary_camera_->SetPosition(pos);
-                    stationary_camera_->LookAt(
-                        stationary_camera_look_at_point_);
+            ImGui::Text("%u vertices", vertex_count);
+            ImGui::Text("%u triangles", tri_count);
+
+            if (ImGui::TreeNode("Camera")) {
+                ImGui::Text("Camera Type");
+                if (ImGui::RadioButton("Rotating",
+                                       active_camera_ == rotating_camera_)) {
+                    active_camera_ = rotating_camera_;
+                }
+                ImGui::SameLine();
+                if (ImGui::RadioButton("Controlled",
+                                       active_camera_ == controlled_camera_)) {
+                    active_camera_ = controlled_camera_;
+                }
+
+                if (ImGui::TreeNode("Properties")) {
+                    if (active_camera_ == rotating_camera_) {
+                        ImGui::DragFloat("Camera Rotation Rate",
+                                         &rotation_rate_, 0.1f, -60.0f, 60.0f,
+                                         "%.02f RPM", ImGuiSliderFlags_None);
+                    } else if (active_camera_ == controlled_camera_) {
+                        glm::vec3 pos =
+                            controlled_camera_->GetNode()->GetTranslation();
+                        ImGui::Text("Position: %.02f %.02f %.02f", pos.x, pos.y,
+                                    pos.z);
+
+                        glm::quat rotation =
+                            controlled_camera_->GetNode()->GetRotation();
+                        glm::vec3 euler = glm::eulerAngles(rotation);
+                        ImGui::Text("Rotation: %.02f %.02f %.02f", euler.x,
+                                    euler.y, euler.z);
+
+                        ImGui::DragFloat("Camera Movement Speed",
+                                         &camera_movement_speed_, 0.1f, 0.0f,
+                                         500.0f);
+
+                        auto mouse_sensitivity = input_->GetMouseSensitivity();
+                        ImGui::DragFloat("Mouse Sensitivity",
+                                         &mouse_sensitivity, 0.1f, 0.0f, 100.0f);
+                        input_->SetMouseSensitivity(mouse_sensitivity);
+
+                        ImGui::DragFloat("Camera Roll Speed",
+                                         &camera_roll_speed_, 0.1f, 0.0f,
+                                         100.0f);
+                                         
+                        ImGui::DragFloat("Camera Slowdown Factor", &slowdown_factor_, 0.05f, 0.0f, 1.0f);
+                    }
+                    ImGui::TreePop();
                 }
                 ImGui::TreePop();
             }
-            ImGui::TreePop();
-        }
 
-        auto extent = renderer_->GetSwapchain().GetExtent();
-        ImGui::Text("Framebuffer Size: %ux%u", extent.width, extent.height);
+            auto extent = renderer_->GetSwapchain().GetExtent();
+            ImGui::Text("Framebuffer Size: %ux%u", extent.width, extent.height);
 
-        auto max_msaa_sample_count = renderer_->GetMaxSampleCount();
-        uint32_t max_msaa_sample_count_int = (uint32_t)max_msaa_sample_count;
-        ImGui::Text("Max MSAA Sample Count: %u", max_msaa_sample_count_int);
+            auto max_msaa_sample_count = renderer_->GetMaxSampleCount();
+            uint32_t max_msaa_sample_count_int =
+                (uint32_t)max_msaa_sample_count;
+            ImGui::Text("Max MSAA Sample Count: %u", max_msaa_sample_count_int);
 
-        if (ImGui::BeginCombo("Current MSAA Sample Count", msaa_samples_str)) {
-            for (auto& map_entry : SAMPLE_COUNT_MAP) {
-                if (map_entry.second > max_msaa_sample_count) {
-                    break;
+            if (ImGui::BeginCombo("Current MSAA Sample Count",
+                                  msaa_samples_str)) {
+                for (auto& map_entry : SAMPLE_COUNT_MAP) {
+                    if (map_entry.second > max_msaa_sample_count) {
+                        break;
+                    }
+                    bool is_selected = map_entry.first == msaa_samples_str;
+                    if (ImGui::Selectable(map_entry.first, is_selected)) {
+                        msaa_samples_str = map_entry.first;
+                        msaa_samples = map_entry.second;
+                    }
+                    if (is_selected) {
+                        ImGui::SetItemDefaultFocus();
+                    }
                 }
-                bool is_selected = map_entry.first == msaa_samples_str;
-                if (ImGui::Selectable(map_entry.first, is_selected)) {
-                    msaa_samples_str = map_entry.first;
-                    msaa_samples = map_entry.second;
-                }
-                if (is_selected) {
-                    ImGui::SetItemDefaultFocus();
-                }
+                ImGui::EndCombo();
             }
-            ImGui::EndCombo();
+            ImGui::Text("%.02f FPS", current_frames_per_second_);
+            ImGui::PlotLines("FPS Graph", frames_per_second_data_.data(),
+                             frames_per_second_data_.size(), 0, nullptr, 0.0f);
         }
-        ImGui::Text("%.02f FPS", current_frames_per_second_);
-        ImGui::PlotLines("FPS Graph", frames_per_second_data_.data(),
-                         frames_per_second_data_.size(), 0, nullptr, 0.0f);
+        ImGui::End();
+        if (!imgui_display_) {
+            SetCaptureCursor(window_, !imgui_display_);
+        }
     }
-    ImGui::End();
     ImGui::Render();
     vk::CommandBufferBeginInfo begin_info(
         vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
@@ -722,7 +861,7 @@ void Application::DrawGui(vk::Framebuffer& framebuffer,
 }
 
 void Application::SubmitGraphicsCommands(
-    std::array<vk::CommandBuffer, 2> command_buffers)
+    std::vector<vk::CommandBuffer> command_buffers)
 {
     vk::PipelineStageFlags wait_dest_stage_mask =
         vk::PipelineStageFlagBits::eColorAttachmentOutput;

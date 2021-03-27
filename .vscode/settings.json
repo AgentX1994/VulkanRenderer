@@ -69,7 +69,8 @@
         "thread": "cpp",
         "typeindex": "cpp",
         "typeinfo": "cpp",
-        "valarray": "cpp"
+        "valarray": "cpp",
+        "span": "cpp"
     },
     "glsllint.glslangValidatorArgs": "--target-env vulkan1.2",
     "cmake.configureSettings": {

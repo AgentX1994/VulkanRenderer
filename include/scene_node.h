@@ -17,12 +17,16 @@ public:
               NonOwningPointer<RenderObject> render_object = nullptr);
 
     void SetParent(NonOwningPointer<SceneNode> new_parent);
-    
+
     void SetTranslation(glm::vec3 translation);
     glm::vec3 GetTranslation() const;
+    void Translate(glm::vec3 translation);
 
     void SetRotation(glm::quat rotation);
     glm::quat GetRotation() const;
+    void Rotate(glm::quat rotation);
+
+    glm::vec3 RotateVector(glm::vec3 v) const;
 
     void SetScale(glm::vec3 scale);
     glm::vec3 GetScale() const;

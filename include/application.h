@@ -13,6 +13,7 @@
 #include "scene_graph.h"
 #include "texture.h"
 #include "vertex.h"
+#include "input.h"
 
 constexpr size_t MAX_FRAMES_IN_FLIGHT = 2;
 
@@ -34,7 +35,7 @@ private:
     // Main functions
     void Init();
     void MainLoop();
-    void Update(float delta_time);
+    void Update(double delta_time);
     void Render();
 
     // Cleanup functions
@@ -63,7 +64,8 @@ private:
     void LoadScene();
 
     // Update functions
-    void UpdateRotatingCamera();
+    void UpdateRotatingCamera(double delta_time);
+    void UpdateControlledCamera(double delta_time);
 
     // Rendering functions
     void WaitForNextFrameFence();
@@ -75,7 +77,7 @@ private:
     void DrawGui(vk::Framebuffer& framebuffer,
                  vk::CommandBuffer& command_buffer,
                  vk::SampleCountFlagBits& msaa_samples);
-    void SubmitGraphicsCommands(std::array<vk::CommandBuffer, 2> command_buffers);
+    void SubmitGraphicsCommands(std::vector<vk::CommandBuffer> command_buffers);
     void Present(uint32_t image_index);
 
     // Imgui Functions
@@ -99,8 +101,7 @@ private:
     // Camera details
     std::array<Camera,2> cameras_;
     NonOwningPointer<Camera> rotating_camera_; //< cameras_[0], rotates around scene
-    NonOwningPointer<Camera> stationary_camera_; //< cameras_[1], stationary
-    glm::vec3 stationary_camera_look_at_point_ = {0.0f, 0.0f, 0.0f}; //< stationary camera's target point
+    NonOwningPointer<Camera> controlled_camera_; //< cameras_[1], stationary
     NonOwningPointer<Camera> active_camera_; //< Whichever camera is active
 
     // Command buffers (one per swapchain image)
@@ -112,8 +113,12 @@ private:
     // Per swapchain fences (to avoid concurrent writes to same swapchain image)
     std::vector<vk::Fence> images_in_flight_;
 
+    // input handling
+    std::optional<Input> input_;
+
     // Imgui Data
     bool imgui_display_ = false;
+    bool imgui_toggle_pressed_last_frame_ = false;
     vk::DescriptorPool imgui_descriptor_pool_;
     vk::RenderPass imgui_render_pass_;
     vk::CommandPool imgui_command_pool_;
@@ -139,6 +144,12 @@ private:
     float rotation_rate_ = 1.0f;
     // Current rotation of the camera
     float current_camera_rotation_degrees_ = 0.0f;
+    // Movement speed of controlled camera
+    float camera_movement_speed_ = 3.0f;
+    // Roll speed of controlled camera
+    float camera_roll_speed_ = 30.0f;
+    // How much to slow movements when slow key is held
+    float slowdown_factor_ = 0.25;
 
     // Vulkan debug messenger (unused)
     vk::DebugUtilsMessengerEXT debug_messenger_;

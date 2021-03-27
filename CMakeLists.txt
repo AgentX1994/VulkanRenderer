@@ -26,6 +26,7 @@ add_subdirectory(third_party)
 add_executable(VulkanTest
   src/main.cpp
   src/application.cpp
+  src/input.cpp
   src/utils.cpp
   src/vertex.cpp
   src/mesh.cpp

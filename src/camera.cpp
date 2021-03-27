@@ -39,10 +39,52 @@ void Camera::SetPosition(glm::vec3 pos)
     owning_node_->SetTranslation(pos);
 }
 
+void Camera::Move(glm::vec3 translation)
+{
+    assert(owning_node_);
+    owning_node_->Translate(translation);
+}
+
+void Camera::MoveForward(float amount)
+{
+    assert(owning_node_);
+    glm::vec3 axis = glm::normalize(owning_node_->RotateVector({0.0, 0.0, -1.0}));
+    Move(axis*amount);
+}
+
+void Camera::MoveRight(float amount)
+{
+    assert(owning_node_);
+    glm::vec3 axis = glm::normalize(owning_node_->RotateVector({1.0, 0.0, 0.0}));
+    Move(axis*amount);
+}
+
+void Camera::MoveUp(float amount)
+{
+    assert(owning_node_);
+    glm::vec3 axis = glm::normalize(owning_node_->RotateVector({0.0, 1.0, 0.0}));
+    Move(axis*amount);
+}
+
+glm::vec3 Camera::GetUpVector() const {
+    assert(owning_node_);
+    return glm::normalize(owning_node_->RotateVector({0.0, 0.0, 1.0}));
+}
+glm::vec3 Camera::GetRightVector() const {
+    assert(owning_node_);
+    return glm::normalize(owning_node_->RotateVector({1.0, 0.0, 0.0}));
+}
+
 void Camera::LookAt(glm::vec3 point, glm::vec3 up)
 {
     assert(owning_node_);
     owning_node_->SetLookAt(point, up);
+}
+
+void Camera::Rotate(glm::quat rotation)
+{
+    assert(owning_node_);
+    owning_node_->Rotate(rotation);
 }
 
 GpuCameraData Camera::GetCameraData() const
