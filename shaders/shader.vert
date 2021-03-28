@@ -20,6 +20,8 @@ layout(location = 1) out vec2 fragTexCoord;
 
 void main() {
     gl_Position = camera.viewproj * object.transform * vec4(inPosition, 1.0);
+    // correct for opposite handedness between OpenGL and Vulcan
+    gl_Position.y = -gl_Position.y;
     fragColor = inColor;
     fragTexCoord = texCoord;
 }

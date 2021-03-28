@@ -4,6 +4,7 @@
 #include <string>
 
 #include "common.h"
+#include "common_glm.h"
 #include "common_vulkan.h"
 
 class RendererState;
@@ -66,3 +67,6 @@ vk::Format FindSupportedFormat(vk::PhysicalDevice& physical_device,
     vk::FormatFeatureFlags features);
 
 vk::Format FindDepthFormat(vk::PhysicalDevice& physical_device);
+
+glm::quat RotationBetweenVectors(glm::vec3 v1, glm::vec3 v2);
+glm::quat QuaternionLookAt(glm::vec3 position, glm::vec3 point, glm::vec3 up = {0.0f, 1.0f, 0.0f});

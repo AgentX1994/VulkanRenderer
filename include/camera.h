@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common.h"
+#include "common_glm.h"
 #include "common_vulkan.h"
 
 class SceneNode;
@@ -40,11 +41,16 @@ public:
     void MoveRight(float amount);
     void MoveUp(float amount);
 
+    glm::vec3 GetForwardVector() const;
     glm::vec3 GetUpVector() const;
     glm::vec3 GetRightVector() const;
 
-    void LookAt(glm::vec3 point, glm::vec3 up = glm::vec3(0.0f, 0.0f, 1.0f));
+    void SetAngles(glm::vec3 angles);
+    glm::vec3 GetAngles() const;
+
+    void LookAt(glm::vec3 point, glm::vec3 up = glm::vec3(0.0f, 1.0f, 0.0f));
     void Rotate(glm::quat rotation);
+    void Rotate(glm::vec3 angles);
 
     GpuCameraData GetCameraData() const;
 
@@ -53,6 +59,12 @@ private:
     float aspect_ratio_;
     float near_z_;
     float far_z_;
+
+    void WrapAngles();
+    void InjectAngles();
+    void ExtractAngles();
+
+    glm::vec3 angles_; // x = x angle, y = y angle, z = z angle
 
     NonOwningPointer<SceneNode> owning_node_;
 };

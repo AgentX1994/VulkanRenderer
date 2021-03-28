@@ -76,8 +76,7 @@ glm::vec3 SceneNode::GetScale() const { return parent_relative_scale_; }
 
 void SceneNode::SetLookAt(glm::vec3 point, glm::vec3 up)
 {
-    glm::mat4 transform = glm::lookAt(parent_relative_translation_, point, up);
-    parent_relative_rotation_ = glm::conjugate(glm::toQuat(transform));
+    parent_relative_rotation_ = QuaternionLookAt(parent_relative_translation_, point, up);
     transform_dirty_ = true;
 }
 

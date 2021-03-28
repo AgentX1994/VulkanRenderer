@@ -1,7 +1,9 @@
 #pragma once
 
 #include "common.h"
+#include "common_glm.h"
 #include "common_vulkan.h"
+#include "coordinate_system.h"
 
 class SceneGraph;
 class RenderObject;
@@ -31,7 +33,7 @@ public:
     void SetScale(glm::vec3 scale);
     glm::vec3 GetScale() const;
 
-    void SetLookAt(glm::vec3 point, glm::vec3 up = glm::vec3(0.0f, 0.0f, 1.0f));
+    void SetLookAt(glm::vec3 point, glm::vec3 up = Coords::UP);
 
     glm::mat4 GetTransform() const;
 

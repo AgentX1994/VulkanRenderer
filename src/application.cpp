@@ -188,7 +188,11 @@ void Application::MainLoop()
         if (input_->GetActionInputState(InputAction::ToggleImgui)) {
             if (!imgui_toggle_pressed_last_frame_) {
                 imgui_display_ ^= true;
-                SetCaptureCursor(window_, !imgui_display_);
+                if (active_camera_ == controlled_camera_) {
+                    SetCaptureCursor(window_, !imgui_display_);
+                } else {
+                    SetCaptureCursor(window_, false);
+                }
             }
             imgui_toggle_pressed_last_frame_ = true;
         } else {
@@ -339,8 +343,6 @@ void Application::InitWindow()
     glfwSetKeyCallback(window_, GlfwCallbacks::KeyCallback);
     glfwSetCursorPosCallback(window_, GlfwCallbacks::MouseCallback);
     glfwSetCursorEnterCallback(window_, GlfwCallbacks::MouseEnterCallback);
-
-    SetCaptureCursor(window_, !imgui_display_);
 }
 
 void Application::SetFramebufferResized() { framebuffer_resized_ = true; }
@@ -516,11 +518,16 @@ void Application::LoadScene()
 
     NonOwningPointer<SceneNode> root = scene_graph_.GetRoot();
 
+    // The viking house model is set with up along the z axis,
+    // so it needs to be rotated
+    glm::quat viking_house_rotation =
+        glm::angleAxis(glm::half_pi<float>(), glm::vec3(-1.0, 0.0, 0.0));
     {
         render_objects_.emplace_back(*renderer_);
         auto& obj1 = render_objects_.back();
         auto scene_node1 = root->CreateChildNode();
         scene_node1->SetTranslation(glm::vec3(-1.0, 0.0, 0.0));
+        scene_node1->SetRotation(viking_house_rotation);
         obj1.SetModel(&models_.front());
         scene_node1->SetRenderObject(&obj1);
     }
@@ -530,6 +537,7 @@ void Application::LoadScene()
         auto& obj2 = render_objects_.back();
         auto scene_node2 = root->CreateChildNode();
         scene_node2->SetTranslation(glm::vec3(1.0, 0.0, 0.0));
+        scene_node2->SetRotation(viking_house_rotation);
         obj2.SetModel(&models_.front());
         scene_node2->SetRenderObject(&obj2);
     }
@@ -552,13 +560,17 @@ void Application::LoadScene()
         controlled_camera_->SetAspectRatio(aspect_ratio);
     }
     active_camera_ = controlled_camera_;
+
+    if (active_camera_ == controlled_camera_) {
+        SetCaptureCursor(window_, !imgui_display_);
+    }
 }
 
 void Application::UpdateRotatingCamera(double delta_time)
 {
     auto pos = glm::vec3(
-        3.0f * glm::cos(glm::radians(current_camera_rotation_degrees_)),
-        3.0f * glm::sin(glm::radians(current_camera_rotation_degrees_)), 2.0f);
+        3.0f * glm::cos(glm::radians(current_camera_rotation_degrees_)), 2.0f,
+        3.0f * glm::sin(glm::radians(current_camera_rotation_degrees_)));
     rotating_camera_->SetPosition(pos);
     rotating_camera_->LookAt(glm::vec3(0.0f, 0.0f, 0.0f));
     // rotation_rate_ = RPM
@@ -607,18 +619,28 @@ void Application::UpdateControlledCamera(double delta_time)
         roll_movement = roll_speed;
     }
 
+    // Don't use mouse input if the gui is displayed
+    if (imgui_display_) {
+        return;
+    }
+
     // Rotation
     auto mouse_movement = (float)delta_time * input_->GetMouseMovement();
-    glm::quat x_rotation = glm::angleAxis(glm::radians(-mouse_movement.x),
-                                          glm::vec3(0.0f, 1.0f, 0.0f));
-    glm::quat y_rotation = glm::angleAxis(glm::radians(mouse_movement.y),
-                                          glm::vec3(1.0f, 0.0f, 0.0f));
-    glm::quat z_rotation = glm::angleAxis(glm::radians(roll_movement),
-                                          glm::vec3(0.0f, 0.0f, 1.0f));
+    glm::vec3 rotation = glm::radians(
+        glm::vec3(mouse_movement.y, -mouse_movement.x, roll_movement));
+    if (rotation == glm::vec3(0.0f, 0.0f, 0.0f)) {
+        return;
+    }
+    // glm::quat x_rotation = glm::angleAxis(glm::radians(-mouse_movement.x),
+    //                                      glm::vec3(0.0f, 1.0f, 0.0f));
+    // glm::quat y_rotation = glm::angleAxis(glm::radians(mouse_movement.y),
+    //                                      glm::vec3(1.0f, 0.0f, 0.0f));
+    // glm::quat z_rotation = glm::angleAxis(glm::radians(roll_movement),
+    //                                      glm::vec3(0.0f, 0.0f, 1.0f));
 
     // x and y are independent, so we can just multiply them together to compose
     // them (I think...)
-    glm::quat rotation = x_rotation * y_rotation * z_rotation;
+    // glm::quat rotation = x_rotation * y_rotation * z_rotation;
     controlled_camera_->Rotate(rotation);
 }
 
@@ -785,26 +807,31 @@ void Application::DrawGui(vk::Framebuffer& framebuffer,
                         ImGui::Text("Position: %.02f %.02f %.02f", pos.x, pos.y,
                                     pos.z);
 
-                        glm::quat rotation =
-                            controlled_camera_->GetNode()->GetRotation();
-                        glm::vec3 euler = glm::eulerAngles(rotation);
-                        ImGui::Text("Rotation: %.02f %.02f %.02f", euler.x,
-                                    euler.y, euler.z);
+                        glm::vec3 euler = controlled_camera_->GetAngles();
+                        euler = glm::degrees(euler);
+                        if (ImGui::DragFloat3("Rotation", &euler[0], 1.0f,
+                                              -180.0f, 180.0f)) {
+                            euler = glm::radians(euler);
+                            controlled_camera_->SetAngles(euler);
+                        }
 
                         ImGui::DragFloat("Camera Movement Speed",
                                          &camera_movement_speed_, 0.1f, 0.0f,
                                          500.0f);
 
                         auto mouse_sensitivity = input_->GetMouseSensitivity();
-                        ImGui::DragFloat("Mouse Sensitivity",
-                                         &mouse_sensitivity, 0.1f, 0.0f, 100.0f);
-                        input_->SetMouseSensitivity(mouse_sensitivity);
+                        if (ImGui::DragFloat("Mouse Sensitivity",
+                                             &mouse_sensitivity, 0.1f, 0.0f,
+                                             100.0f)) {
+                            input_->SetMouseSensitivity(mouse_sensitivity);
+                        }
 
                         ImGui::DragFloat("Camera Roll Speed",
                                          &camera_roll_speed_, 0.1f, 0.0f,
                                          100.0f);
-                                         
-                        ImGui::DragFloat("Camera Slowdown Factor", &slowdown_factor_, 0.05f, 0.0f, 1.0f);
+
+                        ImGui::DragFloat("Camera Slowdown Factor",
+                                         &slowdown_factor_, 0.05f, 0.0f, 1.0f);
                     }
                     ImGui::TreePop();
                 }
@@ -841,8 +868,8 @@ void Application::DrawGui(vk::Framebuffer& framebuffer,
                              frames_per_second_data_.size(), 0, nullptr, 0.0f);
         }
         ImGui::End();
-        if (!imgui_display_) {
-            SetCaptureCursor(window_, !imgui_display_);
+        if (!imgui_display_ && active_camera_ == controlled_camera_) {
+            SetCaptureCursor(window_, true);
         }
     }
     ImGui::Render();

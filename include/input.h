@@ -1,4 +1,5 @@
 #pragma once
+#include "common_glm.h"
 #include "common_vulkan.h"
 
 enum class InputAction

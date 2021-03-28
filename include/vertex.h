@@ -3,6 +3,7 @@
 #include <array>
 
 #include "common.h"
+#include "common_glm.h"
 #include "common_vulkan.h"
 
 struct Vertex

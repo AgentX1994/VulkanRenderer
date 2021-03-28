@@ -23,8 +23,7 @@ pkg_check_modules(Shaderc REQUIRED IMPORTED_TARGET shaderc)
 
 add_subdirectory(third_party)
 
-add_executable(VulkanTest
-  src/main.cpp
+add_library(VulkanTestLib STATIC
   src/application.cpp
   src/input.cpp
   src/utils.cpp
@@ -46,13 +45,13 @@ add_executable(VulkanTest
   src/stb_image.cpp
   src/tiny_obj_loader.cpp)
   
-target_include_directories(VulkanTest
+target_include_directories(VulkanTestLib
 PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>  # <prefix>/include/mylib
 )
 
-target_link_libraries(VulkanTest
+target_link_libraries(VulkanTestLib
 PUBLIC
   Imgui::Imgui
   Vulkan::Vulkan
@@ -61,16 +60,24 @@ PUBLIC
   PkgConfig::Shaderc
   ${CMAKE_DL_LIBS})
 
+add_executable(VulkanTest
+  src/main.cpp
+)
+
+target_link_libraries(VulkanTest
+PUBLIC
+  VulkanTestLib)
+
 # On my Ubuntu install, glm is glm::glm,
 # But on Arch, it is glm
 # link with whichever exists
 if (TARGET glm::glm)
-  target_link_libraries(VulkanTest
+  target_link_libraries(VulkanTestLib
   PUBLIC
     glm::glm
   )
 else()
-  target_link_libraries(VulkanTest
+  target_link_libraries(VulkanTestLib
   PUBLIC
     glm
   )
@@ -108,3 +115,6 @@ add_dependencies(VulkanTest copy_shader_files)
 add_dependencies(VulkanTest copy_texture_files)
 add_dependencies(VulkanTest copy_model_files)
 add_dependencies(VulkanTest copy_material_files)
+
+enable_testing()
+add_subdirectory(tests)

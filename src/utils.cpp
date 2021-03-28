@@ -425,3 +425,62 @@ vk::Format FindDepthFormat(vk::PhysicalDevice& physical_device)
         vk::ImageTiling::eOptimal,
         vk::FormatFeatureFlagBits::eDepthStencilAttachment);
 }
+
+
+glm::quat RotationBetweenVectors(glm::vec3 v1, glm::vec3 v2)
+{
+    // Method from http://www.opengl-tutorial.org/intermediate-tutorials/tutorial-17-quaternions/
+    v1 = glm::normalize(v1);
+    v2 = glm::normalize(v2);
+    
+    float cos_theta = glm::dot(v1, v2);
+    glm::vec3 rotation_axis;
+
+    if (cos_theta < -1 + 0.001f) {
+        // v1 and v2 are almost in opposite directions
+        // In this case, any axis will work, there's no
+        // ideal axis. Just guess a perpendicular axis
+        rotation_axis = glm::cross(glm::vec3(0.0, 0.0, 1.0f), v1);
+        if (glm::length2(rotation_axis) < 0.01f) {
+            // bad luck, v1 and 0,0,1 were parallel
+			rotation_axis = glm::cross(glm::vec3(1.0f, 0.0f, 0.0f), v1);
+        }
+        rotation_axis = glm::normalize(rotation_axis);
+        return glm::angleAxis(glm::radians(180.0f), rotation_axis);
+    }
+    // I'm not sure why this needs to be normalized, but it does
+    rotation_axis = glm::normalize(glm::cross(v1, v2));
+
+	//float s = sqrt( (1+cosTheta)*2 );
+	//float invs = 1 / s;
+
+	//return quat(
+	//	s * 0.5f, 
+	//	rotationAxis.x * invs,
+	//	rotationAxis.y * invs,
+	//	rotationAxis.z * invs
+	//);
+
+    // we have cos_theta, but we want
+    // cos_half_theta
+    // sin_half_theta
+    // use the half angle formula for sin and cos
+
+    float sin_half_theta = glm::sqrt((1 - cos_theta) * 0.5f);
+    float cos_half_theta = glm::sqrt((1 + cos_theta) * 0.5f);
+
+    return glm::quat(
+        cos_half_theta,
+        rotation_axis.x * sin_half_theta,
+        rotation_axis.y * sin_half_theta,
+        rotation_axis.z * sin_half_theta
+    );
+}
+
+glm::quat QuaternionLookAt(glm::vec3 position, glm::vec3 point, glm::vec3 up)
+{
+    glm::vec3 dir = glm::normalize(point - position);
+    up = glm::normalize(up);
+    glm::quat q = glm::quatLookAt(dir, up);
+    return q;
+}
