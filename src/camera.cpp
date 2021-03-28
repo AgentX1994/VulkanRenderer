@@ -128,9 +128,7 @@ GpuCameraData Camera::GetCameraData() const
 
     camera_data.proj =
         glm::perspective(glm::radians(fov_), aspect_ratio_, near_z_, far_z_);
-    // compensate for incorect y coordinate in clipping space (OpenGL has it
-    // flipped compared to Vulkan)
-    // camera_data.proj[1][1] *= -1;
+    // Moved the y coord flipping to the shader
 
     camera_data.viewproj = camera_data.proj * camera_data.view;
 

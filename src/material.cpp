@@ -158,13 +158,16 @@ std::pair<vk::PipelineLayout, vk::Pipeline> Material::CreateGraphicsPipeline(
     vk::PipelineDynamicStateCreateInfo dynamic_state(
         vk::PipelineDynamicStateCreateFlags(), dynamic_states);
 
-    std::vector<vk::DescriptorSetLayout> layouts = {
-        renderer.GetCameraDescriptorSetLayout(),
-        renderer.GetObjectDescriptorSetLayout()};
+    std::vector<vk::DescriptorSetLayout> layouts;
+    layouts.reserve(3);
+    layouts.push_back(renderer.GetCameraDescriptorSetLayout());
 
+    // TODO Handle material layouts...
     if (material_.diffuse_texname.size() > 0) {
         layouts.push_back(renderer.GetMaterialDescriptorSetLayout());
     }
+
+    layouts.push_back(renderer.GetObjectDescriptorSetLayout());
 
     vk::PipelineLayoutCreateInfo pipeline_layout_info(
         vk::PipelineLayoutCreateFlags(),

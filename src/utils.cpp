@@ -451,16 +451,6 @@ glm::quat RotationBetweenVectors(glm::vec3 v1, glm::vec3 v2)
     // I'm not sure why this needs to be normalized, but it does
     rotation_axis = glm::normalize(glm::cross(v1, v2));
 
-	//float s = sqrt( (1+cosTheta)*2 );
-	//float invs = 1 / s;
-
-	//return quat(
-	//	s * 0.5f, 
-	//	rotationAxis.x * invs,
-	//	rotationAxis.y * invs,
-	//	rotationAxis.z * invs
-	//);
-
     // we have cos_theta, but we want
     // cos_half_theta
     // sin_half_theta

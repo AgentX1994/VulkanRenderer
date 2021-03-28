@@ -7,7 +7,7 @@ layout(set = 0, binding = 0) uniform CameraProperties {
     mat4 viewproj;
 } camera;
 
-layout(set = 1, binding = 0) uniform ObjectProperties {
+layout(set = 2, binding = 0) uniform ObjectProperties {
     mat4 transform;
 } object;
 

@@ -738,14 +738,14 @@ void Application::DrawScene(FrameData& frame_data, vk::Framebuffer& framebuffer,
             // Bind texture
             command_buffer.bindDescriptorSets(
                 vk::PipelineBindPoint::eGraphics,
-                material->GetGraphicsPipelineLayout(), 2,
+                material->GetGraphicsPipelineLayout(), 1,
                 material->GetDescriptorSet(), {});
         }
 
         // bind object properties
         command_buffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
                                           material->GetGraphicsPipelineLayout(),
-                                          1, obj.GetDescriptorSet(), {});
+                                          2, obj.GetDescriptorSet(), {});
 
         for (auto& mesh : model->GetMeshes()) {
             command_buffer.bindVertexBuffers(0, mesh.GetVertexBuffer(), {0});
