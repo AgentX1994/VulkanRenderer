@@ -70,3 +70,15 @@ vk::Format FindDepthFormat(vk::PhysicalDevice& physical_device);
 
 glm::quat RotationBetweenVectors(glm::vec3 v1, glm::vec3 v2);
 glm::quat QuaternionLookAt(glm::vec3 position, glm::vec3 point, glm::vec3 up = {0.0f, 1.0f, 0.0f});
+
+template <typename genType>
+genType WrapMax(genType x, genType max)
+{
+    return glm::mod(max + glm::mod(x, max), max);
+}
+
+template <typename genType>
+genType WrapToRange(genType x, genType min, genType max)
+{
+    return min + WrapMax(x - min, max - min);
+}

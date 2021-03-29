@@ -1,8 +1,7 @@
 #include "camera.h"
 
-#include <iostream>
-
 #include "scene_node.h"
+#include "utils.h"
 
 Camera::Camera(float fov, float aspect_ratio, float near_z, float far_z)
     : fov_(fov),
@@ -141,25 +140,13 @@ void Camera::WrapAngles()
 {
     // pitch
     // Pitch is a special case, as it should not wrap
-    if (angles_.x < -glm::half_pi<float>()) {
-        angles_.x = -glm::half_pi<float>();
-    } else if (angles_.x > glm::half_pi<float>()) {
-        angles_.x = glm::half_pi<float>();
-    }
+    glm::clamp(angles_.x, -glm::half_pi<float>(), glm::half_pi<float>());
 
     // yaw
-    if (angles_.y < -glm::pi<float>()) {
-        angles_.y += glm::two_pi<float>();
-    } else if (angles_.y > glm::pi<float>()) {
-        angles_.y -= glm::two_pi<float>();
-    }
+    angles_.y = WrapToRange(angles_.y, -glm::pi<float>(), glm::pi<float>());
 
     // roll
-    if (angles_.z < -glm::pi<float>()) {
-        angles_.z += glm::two_pi<float>();
-    } else if (angles_.z > glm::pi<float>()) {
-        angles_.z -= glm::two_pi<float>();
-    }
+    angles_.z = WrapToRange(angles_.z, -glm::pi<float>(), glm::pi<float>());
 }
 
 void Camera::InjectAngles()
