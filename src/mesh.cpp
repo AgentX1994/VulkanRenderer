@@ -37,8 +37,8 @@ Mesh::Mesh(RendererState& renderer, const tinyobj::attrib_t attribs,
         indices.push_back(unique_vertices[vertex]);
     }
 
-    vertex_count_ = vertices.size();
-    tri_count_ = indices.size() / 3;
+    vertex_count_ = (uint32_t)vertices.size();
+    tri_count_ = (uint32_t)(indices.size() / 3);
 
     gpu_vertices_.SetData(renderer, vertices,
                           vk::BufferUsageFlagBits::eTransferDst |

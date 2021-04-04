@@ -2,6 +2,8 @@
 #include "common_glm.h"
 #include "common_vulkan.h"
 
+#include <unordered_map>
+
 enum class InputAction
 {
     MoveForward,
