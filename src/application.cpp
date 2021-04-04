@@ -1,10 +1,14 @@
 #include "application.h"
 
+#ifdef WIN32
+#else
 #include <fontconfig/fontconfig.h>
+#endif
 
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cstdint>
 #include <iostream>
 #include <limits>
 #include <unordered_map>
@@ -205,7 +209,7 @@ void Application::MainLoop()
         previous_time = current_time;
 
         // Update FPS counter
-        current_frames_per_second_ = 1.0f / delta;
+        current_frames_per_second_ = 1.0f / (float)delta;
 
         fps_timer_ += delta;
         if (fps_timer_ > FPS_GRAPH_UPDATE_TIME) {
@@ -575,8 +579,8 @@ void Application::UpdateRotatingCamera(double delta_time)
     rotating_camera_->LookAt(glm::vec3(0.0f, 0.0f, 0.0f));
     // rotation_rate_ = RPM
     // RPS = RPM * 60
-    current_camera_rotation_degrees_ =
-        delta_time * rotation_rate_ * 60 + current_camera_rotation_degrees_;
+    current_camera_rotation_degrees_ = (float)delta_time * rotation_rate_ * 60 +
+                                       current_camera_rotation_degrees_;
     current_camera_rotation_degrees_ =
         std::fmod(current_camera_rotation_degrees_, 360.0f);
 }
@@ -588,8 +592,8 @@ void Application::UpdateControlledCamera(double delta_time)
     }
 
     // Movement
-    float camera_speed = delta_time * camera_movement_speed_;
-    float roll_speed = delta_time * camera_roll_speed_;
+    float camera_speed = (float)delta_time * camera_movement_speed_;
+    float roll_speed = (float)delta_time * camera_roll_speed_;
     if (input_->GetActionInputState(InputAction::Slow)) {
         camera_speed *= slowdown_factor_;
         roll_speed *= slowdown_factor_;
@@ -865,7 +869,8 @@ void Application::DrawGui(vk::Framebuffer& framebuffer,
             }
             ImGui::Text("%.02f FPS", current_frames_per_second_);
             ImGui::PlotLines("FPS Graph", frames_per_second_data_.data(),
-                             frames_per_second_data_.size(), 0, nullptr, 0.0f);
+                             (int)frames_per_second_data_.size(), 0, nullptr,
+                             0.0f);
         }
         ImGui::End();
         if (!imgui_display_ && active_camera_ == controlled_camera_) {
@@ -1021,6 +1026,11 @@ void Application::SetupImgui()
 
 void Application::FindFontFile(std::string name)
 {
+#ifdef WIN32
+    // Don't feel like figuring out how to find font file paths
+    // on windows
+    font_file_ = "C:\\Users\\John\\AppData\\Local\\Microsoft\\Windows\\Fonts";
+#else
     FcConfig* config = FcInitLoadConfigAndFonts();
 
     // configure the search pattern,
@@ -1043,6 +1053,7 @@ void Application::FindFontFile(std::string name)
 
     FcPatternDestroy(pat);
     FcConfigDestroy(config);
+#endif
 }
 
 void Application::CreateImGuiFramebuffers()

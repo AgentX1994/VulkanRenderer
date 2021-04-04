@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.11)
+cmake_minimum_required(VERSION 3.17)
 
 add_library(Imgui STATIC
     imgui/imgui.cpp
@@ -15,5 +15,12 @@ target_include_directories(Imgui
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/imgui>
     $<INSTALL_INTERFACE:include>  # <prefix>/include/mylib>
 )
+
+target_link_libraries(Imgui PUBLIC glfw Vulkan::Vulkan)
+
+if(WIN32)
+    set_property(TARGET Imgui PROPERTY
+    MSVC_RUNTIME_LIBRARY "MultiThreaded")
+endif()
 
 add_library(Imgui::Imgui ALIAS Imgui)

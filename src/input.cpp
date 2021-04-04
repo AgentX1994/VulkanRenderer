@@ -104,9 +104,9 @@ void Input::MouseCallback(double xpos, double ypos)
     }
     // Measured from top-left, so negate y
     recording_mouse_movement_->x +=
-        mouse_sensitivity_ * (xpos - previous_mouse_position_.x);
+        mouse_sensitivity_ * ((float)xpos - previous_mouse_position_.x);
     recording_mouse_movement_->y +=
-        -mouse_sensitivity_ * (ypos - previous_mouse_position_.y);
+        -mouse_sensitivity_ * ((float)ypos - previous_mouse_position_.y);
     previous_mouse_position_ = {xpos, ypos};
 }
 

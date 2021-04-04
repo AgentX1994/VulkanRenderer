@@ -521,12 +521,12 @@ RendererState::CreateDeviceAndQueues(const std::vector<const char*> extensions,
 
     vk::DeviceCreateInfo create_info;
     create_info.pQueueCreateInfos = queue_create_infos.data();
-    create_info.queueCreateInfoCount = queue_create_infos.size();
+    create_info.queueCreateInfoCount = (uint32_t)queue_create_infos.size();
     create_info.pEnabledFeatures = &device_features;
     create_info.ppEnabledExtensionNames = extensions.data();
-    create_info.enabledExtensionCount = extensions.size();
+    create_info.enabledExtensionCount = (uint32_t)extensions.size();
     create_info.ppEnabledLayerNames = layers.data();
-    create_info.enabledLayerCount = layers.size();
+    create_info.enabledLayerCount = (uint32_t)layers.size();
 
     auto device = physical_device_.createDevice(create_info);
 

@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.11.0)
+cmake_minimum_required(VERSION 3.17.0)
 project(VulkanRenderer)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -14,12 +14,29 @@ endif ()
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 
+# Dependency management on Windows sucks
+# Just create some targets for now
 find_package(Vulkan REQUIRED)
-find_package(glfw3 REQUIRED)
-find_package(glm REQUIRED)
-find_package(Fontconfig REQUIRED)
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(Shaderc REQUIRED IMPORTED_TARGET shaderc)
+if (WIN32)
+  add_library(glfw SHARED IMPORTED)
+  set_property(TARGET glfw PROPERTY IMPORTED_LOCATION "C:\\local\\glfw-3.3.3.bin.WIN64\\lib-vc2019\\glfw3.dll")
+  set_property(TARGET glfw PROPERTY IMPORTED_IMPLIB "C:\\local\\glfw-3.3.3.bin.WIN64\\lib-vc2019\\glfw3dll.lib")  
+  set_property(TARGET glfw PROPERTY INTERFACE_INCLUDE_DIRECTORIES "C:\\local\\glfw-3.3.3.bin.WIN64\\include")
+  
+  add_library(glm INTERFACE IMPORTED)
+  set_property(TARGET glm PROPERTY INTERFACE_INCLUDE_DIRECTORIES "C:\\local\\glm")
+  
+  
+  add_library(shaderc STATIC IMPORTED)
+  set_property(TARGET shaderc PROPERTY IMPORTED_LOCATION "C:\\local\\shaderc\\lib\\shaderc_combined.lib")
+  set_property(TARGET shaderc PROPERTY INTERFACE_INCLUDE_DIRECTORIES "C:\\local\\shaderc\\include")
+elseif(UNIX)
+  find_package(glfw3 REQUIRED)
+  find_package(glm REQUIRED)
+  find_package(Fontconfig REQUIRED)
+  find_package(PkgConfig REQUIRED)
+  pkg_check_modules(Shaderc REQUIRED IMPORTED_TARGET shaderc)
+endif()
 
 add_subdirectory(third_party)
 
@@ -51,18 +68,36 @@ PUBLIC
   $<INSTALL_INTERFACE:include>  # <prefix>/include/mylib
 )
 
-target_link_libraries(VulkanTestLib
-PUBLIC
-  Imgui::Imgui
-  Vulkan::Vulkan
-  glfw
-  Fontconfig::Fontconfig
-  PkgConfig::Shaderc
-  ${CMAKE_DL_LIBS})
+if (WIN32)
+  target_link_libraries(VulkanTestLib
+  PUBLIC
+    Imgui::Imgui
+    Vulkan::Vulkan
+    glfw
+    shaderc
+    ${CMAKE_DL_LIBS})
+
+  set_property(TARGET VulkanTestLib PROPERTY
+    MSVC_RUNTIME_LIBRARY "MultiThreaded")
+elseif (UNIX)
+  target_link_libraries(VulkanTestLib
+  PUBLIC
+    Imgui::Imgui
+    Vulkan::Vulkan
+    glfw
+    Fontconfig::Fontconfig
+    PkgConfig::Shaderc
+    ${CMAKE_DL_LIBS})
+endif()
 
 add_executable(VulkanTest
   src/main.cpp
 )
+
+if (WIN32)
+  set_property(TARGET VulkanTest PROPERTY
+    MSVC_RUNTIME_LIBRARY "MultiThreaded")
+endif()
 
 target_link_libraries(VulkanTest
 PUBLIC
@@ -116,5 +151,8 @@ add_dependencies(VulkanTest copy_texture_files)
 add_dependencies(VulkanTest copy_model_files)
 add_dependencies(VulkanTest copy_material_files)
 
-enable_testing()
-add_subdirectory(tests)
+# Don't feel list supporting testing on Windows right now
+if (UNIX)
+  enable_testing()
+  add_subdirectory(tests)
+endif()

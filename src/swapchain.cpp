@@ -139,7 +139,7 @@ void Swapchain::CreateSwapchain(RendererState& renderer, GLFWwindow* window)
 
     swapchain_ = renderer.GetDevice().createSwapchainKHR(swap_chain_info);
     swapchain_images_ = renderer.GetDevice().getSwapchainImagesKHR(swapchain_);
-    image_count_ = swapchain_images_.size();
+    image_count_ = (uint32_t)swapchain_images_.size();
     swapchain_image_format_ = surface_format;
     swapchain_extent_ = extent;
 }
